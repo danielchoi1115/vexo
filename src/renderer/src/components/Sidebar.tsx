@@ -27,10 +27,20 @@ export function Sidebar(): React.JSX.Element {
       <div className="sidebar-header">
         <span className="brand">Vexo</span>
         <div className="sidebar-header-actions">
-          <button className="btn icon" title="New session" onClick={() => requestNewSession()}>
+          <button
+            type="button"
+            className="btn header-icon"
+            title="New session"
+            onClick={() => requestNewSession()}
+          >
             +
           </button>
-          <button className="btn ghost sm" title="Settings" onClick={() => setSettingsOpen(true)}>
+          <button
+            type="button"
+            className="btn header-icon"
+            title="Settings"
+            onClick={() => setSettingsOpen(true)}
+          >
             ⚙
           </button>
         </div>

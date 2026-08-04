@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { TerminalView } from './TerminalView'
@@ -16,6 +16,15 @@ export function Workspace(): React.JSX.Element {
   const remoteMonitoring = useSettingsStore((s) => s.remoteMonitoring)
 
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+  const tabBarRef = useRef<HTMLDivElement>(null)
+  const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+
+  // Scroll tab bar so the focused session stays in view
+  useEffect(() => {
+    if (!focusedActiveId) return
+    const el = tabRefs.current.get(focusedActiveId)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+  }, [focusedActiveId, activeSessions.length])
 
   const hasDisconnected = activeSessions.some(
     (a) => a.status === 'disconnected' || a.status === 'error'
@@ -59,11 +68,15 @@ export function Workspace(): React.JSX.Element {
 
   return (
     <div className="workspace">
-      <div className="tab-bar">
+      <div className="tab-bar" ref={tabBarRef}>
         {activeSessions.map((s) => (
           <div
             key={s.id}
-            className={`tab ${s.id === focusedActiveId ? 'active' : ''}`}
+            ref={(node) => {
+              if (node) tabRefs.current.set(s.id, node)
+              else tabRefs.current.delete(s.id)
+            }}
+            className={`tab ${s.id === focusedActiveId ? 'active' : 'inactive'}`}
             onClick={() => setFocused(s.id)}
             onContextMenu={(e) => {
               e.preventDefault()

@@ -12,7 +12,6 @@ function App(): React.JSX.Element {
   const setMetrics = useAppStore((s) => s.setMetrics)
   const error = useAppStore((s) => s.error)
   const setError = useAppStore((s) => s.setError)
-  const connecting = useAppStore((s) => s.connecting)
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const loadSettings = useSettingsStore((s) => s.load)
@@ -41,14 +40,13 @@ function App(): React.JSX.Element {
     <div className="app-shell">
       <Sidebar />
       <main className="main">
-        {(error || connecting) && (
-          <div className={`top-banner ${error ? 'error' : 'info'}`}>
-            {connecting ? 'Connecting… (enter credentials in the terminal if prompted)' : error}
-            {error && (
-              <button className="btn ghost sm" onClick={() => setError(null)}>
-                Dismiss
-              </button>
-            )}
+        {/* Reserve banner slot only for errors — avoid layout jump on Connecting */}
+        {error && (
+          <div className="top-banner error">
+            {error}
+            <button className="btn ghost sm" onClick={() => setError(null)}>
+              Dismiss
+            </button>
           </div>
         )}
         <Workspace />

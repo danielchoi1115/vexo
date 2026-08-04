@@ -114,7 +114,9 @@ export function SessionForm({
         />
       </label>
       <label>
-        Username <span className="optional">(optional)</span>
+        <span className="field-label">
+          Username <span className="optional">(optional)</span>
+        </span>
         <input
           value={form.username ?? ''}
           onChange={(e) => set('username', e.target.value)}
@@ -135,7 +137,9 @@ export function SessionForm({
 
       {form.authMethod === 'password' && (
         <label>
-          Password <span className="optional">(optional)</span>
+          <span className="field-label">
+            Password <span className="optional">(optional)</span>
+          </span>
           <input
             type="password"
             value={password}
@@ -161,7 +165,9 @@ export function SessionForm({
             </div>
           </label>
           <label>
-            Passphrase <span className="optional">(optional)</span>
+            <span className="field-label">
+              Passphrase <span className="optional">(optional)</span>
+            </span>
             <input
               type="password"
               value={passphrase}

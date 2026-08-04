@@ -80,7 +80,21 @@ select:focus {
 .sidebar-header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+}
+
+.btn.header-icon {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: var(--radius);
 }
 
 .session-options {
@@ -374,30 +388,46 @@ select:focus {
 .tab-bar {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   padding: 6px 8px 0;
   background: var(--bg-elevated);
   border-bottom: 1px solid var(--border);
-  min-height: 40px;
+  min-height: 42px;
   overflow-x: auto;
+  scroll-behavior: smooth;
 }
 
 .tab {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 7px 12px;
   border-radius: 6px 6px 0 0;
-  background: transparent;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
   border: 1px solid transparent;
   border-bottom: none;
   max-width: 180px;
   cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0.72;
+  color: var(--muted);
+}
+
+.tab.inactive:hover {
+  opacity: 0.9;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
 }
 
 .tab.active {
   background: var(--bg);
   border-color: var(--border);
+  border-bottom-color: var(--bg);
+  opacity: 1;
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 2px 0 0 var(--focus);
+  z-index: 1;
 }
 
 .tab-label {
@@ -746,7 +776,8 @@ select:focus {
 
 .settings-content {
   padding: 16px 18px;
-  overflow: auto;
+  overflow: visible;
+  min-height: 0;
 }
 
 .settings-section {
@@ -840,17 +871,78 @@ select:focus {
   color: var(--text);
 }
 
-.selection-hint {
+.session-form .field-label {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: nowrap;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.session-form .field-label .optional {
+  white-space: nowrap;
+}
+
+.font-picker {
+  position: relative;
+}
+
+.font-picker-trigger {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  margin-top: 6px;
-  padding: 4px 6px;
-  font-size: 11px;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.font-picker-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-picker-caret {
   color: var(--muted);
-  background: color-mix(in srgb, var(--focus) 10%, transparent);
+  flex-shrink: 0;
+}
+
+.font-picker-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 50;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+}
+
+.font-picker-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 8px 10px;
   border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.font-picker-item:hover {
+  background: color-mix(in srgb, var(--focus) 14%, transparent);
+}
+
+.font-picker-item.active {
+  background: color-mix(in srgb, var(--focus) 22%, transparent);
+  font-weight: 600;
 }
 
 .scheme-preview {

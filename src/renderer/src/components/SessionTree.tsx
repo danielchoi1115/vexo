@@ -18,11 +18,16 @@ type PromptState =
 /** Module-level drag payload — Chromium sometimes drops custom mime types on drop */
 let activeDrag: { type: 'session' | 'folder'; id: string } | null = null
 
-function nextDuplicateName(baseName: string, existingNames: string[]): string {
+/** "foo (1)" → base "foo", so duplicating yields "foo (2)" not "foo (1) (1)" */
+function nextDuplicateName(name: string, existingNames: string[]): string {
   const set = new Set(existingNames)
+  const m = name.match(/^(.*?)(?: \((\d+)\))?$/)
+  const base = (m?.[1] ?? name).trimEnd() || name
   let i = 1
-  while (set.has(`${baseName} (${i})`)) i++
-  return `${baseName} (${i})`
+  // If name already ends with (n), start from n+1
+  if (m?.[2]) i = Number(m[2]) + 1
+  while (set.has(`${base} (${i})`)) i++
+  return `${base} (${i})`
 }
 
 export function SessionTree(): React.JSX.Element {
@@ -342,18 +347,6 @@ export function SessionTree(): React.JSX.Element {
           onChange={(e) => setQuery(e.target.value)}
           onClick={(e) => e.stopPropagation()}
         />
-        {selectedFolderId && (
-          <div className="selection-hint">
-            Folder selected — + creates here
-            <button
-              type="button"
-              className="btn ghost sm"
-              onClick={() => setSelectedFolderId(null)}
-            >
-              Clear
-            </button>
-          </div>
-        )}
       </div>
 
       <div

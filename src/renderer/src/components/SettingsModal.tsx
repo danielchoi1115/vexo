@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { COLOR_SCHEMES } from '../../../shared/themes'
 import type { AppSettings, ColorSchemeId } from '../../../shared/types'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -30,6 +30,69 @@ const TABS: { id: SettingsTab; label: string }[] = [
 
 function isLightScheme(id: string): boolean {
   return id.includes('light') || id === 'paper' || id === 'catppuccin-latte'
+}
+
+function FontPicker({
+  value,
+  options,
+  onChange
+}: {
+  value: string
+  options: string[]
+  onChange: (font: string) => void
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent): void => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  useEffect(() => {
+    if (!open || !listRef.current) return
+    const active = listRef.current.querySelector('[data-active="true"]') as HTMLElement | null
+    active?.scrollIntoView({ block: 'nearest' })
+  }, [open, value])
+
+  return (
+    <div className="font-picker" ref={rootRef}>
+      <button
+        type="button"
+        className="settings-control font-picker-trigger"
+        style={{ fontFamily: value }}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="font-picker-value">{value}</span>
+        <span className="font-picker-caret">▾</span>
+      </button>
+      {open && (
+        <div className="font-picker-list" ref={listRef} role="listbox">
+          {options.map((f) => (
+            <button
+              key={f}
+              type="button"
+              role="option"
+              data-active={f === value ? 'true' : 'false'}
+              className={`font-picker-item ${f === value ? 'active' : ''}`}
+              style={{ fontFamily: f }}
+              onClick={() => {
+                onChange(f)
+                setOpen(false)
+              }}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function SettingsModal({ onClose }: Props): React.JSX.Element {
@@ -175,18 +238,11 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
 
                 <label className="settings-field">
                   <span className="settings-label">Font Family</span>
-                  <select
-                    className="settings-control"
+                  <FontPicker
                     value={draft.fontFamily}
-                    onChange={(e) => patch({ fontFamily: e.target.value })}
-                    style={{ fontFamily: draft.fontFamily }}
-                  >
-                    {fontOptions.map((f) => (
-                      <option key={f} value={f} style={{ fontFamily: f }}>
-                        {f}
-                      </option>
-                    ))}
-                  </select>
+                    options={fontOptions}
+                    onChange={(f) => patch({ fontFamily: f })}
+                  />
                 </label>
 
                 <label className="settings-field">
