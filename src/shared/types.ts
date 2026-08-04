@@ -223,4 +223,7 @@ export interface VexoApi {
   clipboard: {
     writeText: (text: string) => Promise<void>
   }
+  window: {
+    setTitle: (title: string) => Promise<void>
+  }
 }

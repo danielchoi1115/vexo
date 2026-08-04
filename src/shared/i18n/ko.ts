@@ -5,7 +5,8 @@ export const ko: MessageTree = {
     brand: 'Vexo',
     welcomeTitle: 'Vexo에 오신 것을 환영합니다',
     welcomeBody: '왼쪽 저장된 세션을 더블클릭해 연결하세요.',
-    welcomeHint: '세션 목록에서 우클릭으로 새 세션/폴더를 만들 수 있습니다.'
+    welcomeHint: '세션 목록에서 우클릭으로 새 세션/폴더를 만들 수 있습니다.',
+    maxSessions: '동시에 열 수 있는 세션은 최대 {max}개입니다.'
   },
   common: {
     ok: '확인',

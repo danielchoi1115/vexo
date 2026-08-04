@@ -3,7 +3,8 @@ export const en = {
     brand: 'Vexo',
     welcomeTitle: 'Welcome to Vexo',
     welcomeBody: 'Double-click a saved session on the left to connect.',
-    welcomeHint: 'Right-click the session list for New Session / New Folder.'
+    welcomeHint: 'Right-click the session list for New Session / New Folder.',
+    maxSessions: 'Maximum {max} sessions can be open at once.'
   },
   common: {
     ok: 'OK',

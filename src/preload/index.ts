@@ -97,6 +97,9 @@ const api: VexoApi = {
   },
   clipboard: {
     writeText: (text: string) => ipcRenderer.invoke('clipboard:writeText', text)
+  },
+  window: {
+    setTitle: (title: string) => ipcRenderer.invoke('window:setTitle', title)
   }
 }
 

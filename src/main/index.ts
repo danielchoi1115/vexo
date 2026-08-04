@@ -26,7 +26,11 @@ function createWindow(): void {
     }
   })
 
+  // Ensure OS chrome never falls back to "Electron"
+  mainWindow.setTitle('Vexo')
+
   mainWindow.on('ready-to-show', () => {
+    mainWindow?.setTitle('Vexo')
     mainWindow?.show()
   })
 

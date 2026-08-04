@@ -7,6 +7,13 @@ import * as settingsStore from './settingsStore'
 import type { SshManager } from './ssh/SshManager'
 
 export function registerIpc(ssh: SshManager, getWindow: () => BrowserWindow | null): void {
+  ipcMain.handle('window:setTitle', (_e, title: string) => {
+    const win = getWindow()
+    if (win && !win.isDestroyed()) {
+      win.setTitle(title || 'Vexo')
+    }
+  })
+
   ipcMain.handle('sessions:list', () => sessionStore.listSessions())
   ipcMain.handle('sessions:listFolders', () => sessionStore.listFolders())
   ipcMain.handle('sessions:save', (_e, input: SessionInput & { id?: string }) =>

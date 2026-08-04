@@ -99,8 +99,8 @@ select:focus {
   border-radius: var(--radius);
   line-height: 0;
   font-size: 0; /* avoid font baseline shifting the button */
-  background: transparent;
-  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--text) 6%, var(--bg-elevated));
+  border: 1px solid var(--border);
   color: var(--text);
   cursor: pointer;
   transition:
@@ -111,7 +111,7 @@ select:focus {
 
 .btn.icon-btn:hover {
   background: color-mix(in srgb, var(--focus) 16%, transparent);
-  border-color: color-mix(in srgb, var(--focus) 35%, var(--border));
+  border-color: color-mix(in srgb, var(--focus) 45%, var(--border));
   color: var(--text);
   filter: none;
 }
@@ -144,8 +144,16 @@ select:focus {
   transform: translateY(-1px);
 }
 
+/* Settings X stays lighter (no heavy border chrome) */
 .modal-close-btn {
   flex-shrink: 0;
+  background: transparent;
+  border-color: transparent;
+}
+
+.modal-close-btn:hover {
+  background: color-mix(in srgb, var(--focus) 16%, transparent);
+  border-color: color-mix(in srgb, var(--focus) 35%, var(--border));
 }
 
 /* legacy alias */
@@ -453,9 +461,137 @@ select:focus {
   min-height: 0;
 }
 
+.workspace.split-workspace {
+  min-height: 0;
+  overflow: hidden;
+}
+
 .empty-workspace {
   align-items: center;
   justify-content: center;
+}
+
+/* --- Split layout (VS Code-style) --- */
+.split-branch {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.split-branch.dir-row {
+  grid-template-rows: 1fr;
+}
+
+.split-branch.dir-col {
+  grid-template-columns: 1fr;
+}
+
+.split-child {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.split-sash {
+  background: var(--border);
+  z-index: 5;
+  transition: background 0.12s ease;
+}
+
+.split-sash.dir-row {
+  cursor: col-resize;
+}
+
+.split-sash.dir-col {
+  cursor: row-resize;
+}
+
+.split-sash:hover,
+.split-sash:active {
+  background: var(--focus);
+}
+
+.editor-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  border: 1px solid transparent;
+}
+
+.editor-pane.focused {
+  border-color: color-mix(in srgb, var(--focus) 40%, transparent);
+}
+
+.editor-pane-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.editor-pane-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+/* Drop overlay zones */
+.split-drop-overlay {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+}
+
+.split-drop-region {
+  position: absolute;
+  background: color-mix(in srgb, var(--focus) 28%, transparent);
+  border: 2px solid var(--focus);
+  border-radius: 4px;
+  box-sizing: border-box;
+  transition:
+    inset 0.08s ease,
+    width 0.08s ease,
+    height 0.08s ease;
+}
+
+.split-drop-region.zone-center {
+  inset: 12%;
+}
+
+.split-drop-region.zone-left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 50%;
+}
+
+.split-drop-region.zone-right {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 50%;
+}
+
+.split-drop-region.zone-top {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 50%;
+}
+
+.split-drop-region.zone-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 50%;
 }
 
 .welcome {
