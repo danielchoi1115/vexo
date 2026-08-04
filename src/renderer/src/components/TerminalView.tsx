@@ -158,14 +158,16 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
       }
     })
 
-    // Ctrl+C / Ctrl+V only when copy-on-select is OFF
+    // Ctrl+C / Ctrl+V clipboard mode only when copy-on-select is OFF.
+    // Paste is handled solely by the 'paste' event to avoid double-paste
+    // (keydown handler + browser paste event both writing).
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true
       const mod = ev.ctrlKey || ev.metaKey
       if (!mod) return true
 
       if (copyOnSelectRef.current) {
-        // Selection copies automatically — let Ctrl+C/V go to the shell
+        // Auto-copy on select is on — Ctrl+C/V go to the remote shell
         return true
       }
 
@@ -182,14 +184,25 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
       }
 
       if (ev.key === 'v' || ev.key === 'V') {
-        void navigator.clipboard.readText().then((text) => {
-          if (text) void window.api.ssh.write(activeSessionId, text)
-        })
+        // Don't write here — browser will fire 'paste' once; we handle it there
         return false
       }
 
       return true
     })
+
+    const onPaste = (e: ClipboardEvent): void => {
+      // Always prevent browser/xterm default paste path
+      e.preventDefault()
+      e.stopPropagation()
+      if (copyOnSelectRef.current) {
+        // Copy-on-select mode: don't inject clipboard via paste event
+        return
+      }
+      const text = e.clipboardData?.getData('text/plain')
+      if (text) void window.api.ssh.write(activeSessionId, text)
+    }
+    el.addEventListener('paste', onPaste)
 
     const resize = (): void => {
       fit.fit()
@@ -230,6 +243,7 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
       ro.disconnect()
       el.removeEventListener('wheel', onWheel)
       el.removeEventListener('contextmenu', onContext)
+      el.removeEventListener('paste', onPaste)
       term.dispose()
       termRef.current = null
       fitRef.current = null

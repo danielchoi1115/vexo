@@ -524,5 +524,5 @@ export const DEFAULT_SETTINGS = {
   colorScheme: 'github-dark' as ColorSchemeId,
   pasteOnRightClick: true,
   remoteMonitoring: false,
-  copyOnSelect: false
+  copyOnSelect: true
 }
