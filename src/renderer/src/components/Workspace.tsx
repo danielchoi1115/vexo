@@ -5,6 +5,7 @@ import { TerminalView } from './TerminalView'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 
 export function Workspace(): React.JSX.Element {
+  const t = useSettingsStore((s) => s.t)
   const activeSessions = useAppStore((s) => s.activeSessions)
   const focusedActiveId = useAppStore((s) => s.focusedActiveId)
   const setFocused = useAppStore((s) => s.setFocused)
@@ -32,21 +33,21 @@ export function Workspace(): React.JSX.Element {
 
   const tabMenuItems = (id: string): MenuItem[] => [
     {
-      label: 'Close tab',
+      label: t('tabs.closeTab'),
       onClick: () => void disconnectSession(id)
     },
     {
-      label: 'Close all except this tab',
+      label: t('tabs.closeOthers'),
       onClick: () => void disconnectOthers(id),
       disabled: activeSessions.length <= 1
     },
     {
-      label: 'Close all disconnected',
+      label: t('tabs.closeDisconnected'),
       onClick: () => void disconnectDisconnected(),
       disabled: !hasDisconnected
     },
     {
-      label: 'Close all tabs',
+      label: t('tabs.closeAll'),
       onClick: () => void disconnectAll(),
       danger: true
     }
@@ -56,9 +57,9 @@ export function Workspace(): React.JSX.Element {
     return (
       <div className="workspace empty-workspace">
         <div className="welcome">
-          <h2>Welcome to Vexo</h2>
-          <p>Double-click a saved session on the left to connect.</p>
-          <p className="muted">Right-click the session list for New Session / New Folder.</p>
+          <h2>{t('app.welcomeTitle')}</h2>
+          <p>{t('app.welcomeBody')}</p>
+          <p className="muted">{t('app.welcomeHint')}</p>
         </div>
       </div>
     )
@@ -88,7 +89,7 @@ export function Workspace(): React.JSX.Element {
             <span className="tab-label">{s.name}</span>
             <button
               className="tab-close"
-              title="Close"
+              title={t('tabs.close')}
               onClick={(e) => {
                 e.stopPropagation()
                 void disconnectSession(s.id)

@@ -112,12 +112,22 @@ export interface ConnectOptions {
   passphrase?: string
 }
 
+export type LocaleId = 'en' | 'ko'
+
 export interface AppSettings {
-  fontFamily: string
-  fontSize: number
+  locale: LocaleId
+  /** Terminal (xterm) font */
+  terminalFontFamily: string
+  terminalFontSize: number
+  /** App chrome / menus UI font */
+  uiFontFamily: string
+  uiFontSize: number
   colorScheme: ColorSchemeId
   pasteOnRightClick: boolean
   remoteMonitoring: boolean
+  /** @deprecated migrated to terminal* / ui* */
+  fontFamily?: string
+  fontSize?: number
 }
 
 export interface RemoteMetrics {

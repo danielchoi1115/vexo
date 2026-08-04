@@ -516,8 +516,11 @@ export const COLOR_SCHEMES: Record<ColorSchemeId, TerminalTheme> = {
 }
 
 export const DEFAULT_SETTINGS = {
-  fontFamily: 'Consolas',
-  fontSize: 14,
+  locale: 'en' as const,
+  terminalFontFamily: 'Consolas',
+  terminalFontSize: 14,
+  uiFontFamily: 'Segoe UI',
+  uiFontSize: 13,
   colorScheme: 'github-dark' as ColorSchemeId,
   pasteOnRightClick: true,
   remoteMonitoring: false

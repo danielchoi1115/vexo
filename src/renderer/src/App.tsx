@@ -15,6 +15,7 @@ function App(): React.JSX.Element {
   const settingsOpen = useAppStore((s) => s.settingsOpen)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const loadSettings = useSettingsStore((s) => s.load)
+  const t = useSettingsStore((s) => s.t)
 
   useEffect(() => {
     void loadSettings()
@@ -45,7 +46,7 @@ function App(): React.JSX.Element {
           <div className="top-banner error">
             {error}
             <button className="btn ghost sm" onClick={() => setError(null)}>
-              Dismiss
+              {t('common.dismiss')}
             </button>
           </div>
         )}

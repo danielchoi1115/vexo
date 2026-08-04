@@ -13,8 +13,10 @@
   --radius: 6px;
   --term-font: Consolas, 'Cascadia Code', 'Courier New', monospace;
   --term-font-size: 14px;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  font-size: 13px;
+  --ui-font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --ui-font-size: 13px;
+  font-family: var(--ui-font);
+  font-size: var(--ui-font-size);
   color: var(--text);
   background: var(--bg);
 }
@@ -270,11 +272,21 @@ select:focus {
   text-align: center;
 }
 
+.sftp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
 .sftp-path {
-  padding: 6px 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
   font-size: 11px;
   color: var(--muted);
-  border-bottom: 1px solid var(--border);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -895,6 +907,19 @@ select:focus {
   width: 100%;
   text-align: left;
   cursor: pointer;
+  background: var(--bg) !important;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.font-picker-trigger:hover {
+  border-color: var(--focus);
+  filter: none;
+}
+
+.font-picker-trigger.open {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--focus) 35%, transparent);
 }
 
 .font-picker-value {

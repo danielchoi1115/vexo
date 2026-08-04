@@ -492,7 +492,11 @@ export class SshManager {
       const result = await dialog.showSaveDialog(win!, {
         defaultPath: join(app.getPath('desktop'), basename(remotePath))
       })
-      if (result.canceled || !result.filePath) throw new Error('Save cancelled')
+      if (result.canceled || !result.filePath) {
+        const err = new Error('CANCELLED')
+        err.name = 'CancelledError'
+        throw err
+      }
       dest = result.filePath
     }
 

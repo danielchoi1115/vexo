@@ -65,8 +65,8 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
   const pendingRef = useRef<string[]>([])
   const activeRef = useRef(active)
 
-  const fontFamily = useSettingsStore((s) => s.fontFamily)
-  const fontSize = useSettingsStore((s) => s.fontSize)
+  const fontFamily = useSettingsStore((s) => s.terminalFontFamily)
+  const fontSize = useSettingsStore((s) => s.terminalFontSize)
   const theme = useSettingsStore((s) => s.theme)
   const pasteOnRightClick = useSettingsStore((s) => s.pasteOnRightClick)
   const updateSettings = useSettingsStore((s) => s.update)
@@ -185,8 +185,11 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
       if (!e.ctrlKey) return
       e.preventDefault()
       const delta = e.deltaY > 0 ? -1 : 1
-      const next = Math.min(28, Math.max(10, (useSettingsStore.getState().fontSize || 14) + delta))
-      void updateSettings({ fontSize: next })
+      const next = Math.min(
+        28,
+        Math.max(10, (useSettingsStore.getState().terminalFontSize || 14) + delta)
+      )
+      void updateSettings({ terminalFontSize: next })
     }
     el.addEventListener('wheel', onWheel, { passive: false })
 

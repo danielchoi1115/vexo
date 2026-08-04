@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionConfig, SessionFolder } from '../../../shared/types'
 import { useAppStore } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { SessionForm } from './SessionForm'
 import { PromptDialog } from './PromptDialog'
@@ -31,6 +32,7 @@ function nextDuplicateName(name: string, existingNames: string[]): string {
 }
 
 export function SessionTree(): React.JSX.Element {
+  const t = useSettingsStore((s) => s.t)
   const sessions = useAppStore((s) => s.sessions)
   const folders = useAppStore((s) => s.folders)
   const loadSessions = useAppStore((s) => s.loadSessions)
@@ -123,69 +125,73 @@ export function SessionTree(): React.JSX.Element {
 
   const blankMenu = (): MenuItem[] => [
     {
-      label: 'New Session',
+      label: t('session.newSession'),
       onClick: () => openNewSession(selectedFolderId)
     },
-    { label: 'New Folder', onClick: () => setPrompt({ kind: 'new-folder' }) },
+    { label: t('session.newFolder'), onClick: () => setPrompt({ kind: 'new-folder' }) },
     { separator: true, label: '', onClick: () => {} },
     {
-      label: 'Export sessions…',
+      label: t('session.export'),
       onClick: () => {
         void window.api.sessions.export().then((r) => {
-          if (r.ok) window.alert(`Exported to:\n${r.path}`)
+          if (r.ok) window.alert(t('session.exportedTo', { path: r.path }))
         })
       }
     },
     {
-      label: 'Import sessions (merge)…',
+      label: t('session.importMerge'),
       onClick: () => {
         void window.api.sessions
           .import('merge')
           .then((r) => {
             if (r.ok) {
               void loadSessions()
-              window.alert(`Imported ${r.sessions} session(s), ${r.folders} folder(s).`)
+              window.alert(
+                t('session.imported', { sessions: r.sessions, folders: r.folders })
+              )
             }
           })
           .catch((e: Error) => window.alert(e.message))
       }
     },
     {
-      label: 'Import sessions (replace)…',
+      label: t('session.importReplace'),
       onClick: () => {
-        if (!window.confirm('Replace all current sessions and folders?')) return
+        if (!window.confirm(t('session.replaceConfirm'))) return
         void window.api.sessions
           .import('replace')
           .then((r) => {
             if (r.ok) {
               void loadSessions()
-              window.alert(`Replaced with ${r.sessions} session(s), ${r.folders} folder(s).`)
+              window.alert(
+                t('session.replaced', { sessions: r.sessions, folders: r.folders })
+              )
             }
           })
           .catch((e: Error) => window.alert(e.message))
       }
     },
     { separator: true, label: '', onClick: () => {} },
-    { label: 'Settings', onClick: () => setSettingsOpen(true) }
+    { label: t('common.settings'), onClick: () => setSettingsOpen(true) }
   ]
 
   const sessionMenu = (session: SessionConfig): MenuItem[] => [
-    { label: 'Connect', onClick: () => tryConnect(session) },
-    { label: 'Edit', onClick: () => setEditing(session) },
+    { label: t('common.connect'), onClick: () => tryConnect(session) },
+    { label: t('common.edit'), onClick: () => setEditing(session) },
     {
-      label: 'Duplicate',
+      label: t('session.duplicate'),
       onClick: () => void duplicateSession(session)
     },
     {
-      label: session.favorite ? 'Unfavorite' : 'Favorite',
+      label: session.favorite ? t('session.unfavorite') : t('session.favorite'),
       onClick: () =>
         void window.api.sessions.setFavorite(session.id, !session.favorite).then(loadSessions)
     },
     {
-      label: 'Delete',
+      label: t('common.delete'),
       danger: true,
       onClick: () => {
-        if (window.confirm(`Delete session "${session.name}"?`)) {
+        if (window.confirm(t('session.deleteSessionConfirm', { name: session.name }))) {
           void window.api.sessions.delete(session.id).then(loadSessions)
         }
       }
@@ -194,26 +200,26 @@ export function SessionTree(): React.JSX.Element {
 
   const folderMenu = (folder: SessionFolder): MenuItem[] => [
     {
-      label: 'Select folder',
+      label: t('session.selectFolder'),
       onClick: () => setSelectedFolderId(folder.id)
     },
-    { label: 'New Session here', onClick: () => openNewSession(folder.id) },
+    { label: t('session.newSessionHere'), onClick: () => openNewSession(folder.id) },
     {
-      label: folder.collapsed ? 'Expand' : 'Collapse',
+      label: folder.collapsed ? t('session.expand') : t('session.collapse'),
       onClick: () =>
         void window.api.sessions
           .setFolderCollapsed(folder.id, !folder.collapsed)
           .then(loadSessions)
     },
     {
-      label: 'Rename',
+      label: t('common.rename'),
       onClick: () => setPrompt({ kind: 'rename-folder', folder })
     },
     {
-      label: 'Delete folder',
+      label: t('session.deleteFolder'),
       danger: true,
       onClick: () => {
-        if (window.confirm(`Delete folder "${folder.name}"? Sessions move to root.`)) {
+        if (window.confirm(t('session.deleteFolderConfirm', { name: folder.name }))) {
           void window.api.sessions.deleteFolder(folder.id).then(loadSessions)
         }
       }
@@ -342,7 +348,7 @@ export function SessionTree(): React.JSX.Element {
       <div className="sidebar-toolbar">
         <input
           className="search"
-          placeholder="Search…"
+          placeholder={t('sidebar.search')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onClick={(e) => e.stopPropagation()}
@@ -424,7 +430,7 @@ export function SessionTree(): React.JSX.Element {
         </div>
 
         {filteredSessions.length === 0 && folders.length === 0 && (
-          <div className="empty">Click + or right-click for New Session / New Folder</div>
+          <div className="empty">{t('sidebar.emptySessions')}</div>
         )}
       </div>
 
@@ -445,10 +451,10 @@ export function SessionTree(): React.JSX.Element {
 
       {prompt?.kind === 'new-folder' && (
         <PromptDialog
-          title="New folder"
-          label="Folder name"
-          defaultValue="New folder"
-          confirmLabel="Create"
+          title={t('session.newFolder')}
+          label={t('session.folderName')}
+          defaultValue={t('session.newFolder')}
+          confirmLabel={t('common.create')}
           onCancel={() => setPrompt(null)}
           onSubmit={(name) => {
             setPrompt(null)
@@ -459,10 +465,10 @@ export function SessionTree(): React.JSX.Element {
 
       {prompt?.kind === 'rename-folder' && (
         <PromptDialog
-          title="Rename folder"
-          label="Folder name"
+          title={t('common.rename')}
+          label={t('session.folderName')}
           defaultValue={prompt.folder.name}
-          confirmLabel="Rename"
+          confirmLabel={t('common.rename')}
           onCancel={() => setPrompt(null)}
           onSubmit={(name) => {
             const id = prompt.folder.id

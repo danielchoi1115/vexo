@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import type { AuthMethod, SessionConfig, SessionInput } from '../../../shared/types'
+import { useSettingsStore } from '../stores/settingsStore'
 
 interface Props {
   initial?: SessionConfig | null
@@ -26,6 +27,7 @@ export function SessionForm({
   onSaved,
   onCancel
 }: Props): React.JSX.Element {
+  const t = useSettingsStore((s) => s.t)
   const [form, setForm] = useState<SessionInput>({
     ...empty,
     ...(initial
@@ -81,11 +83,11 @@ export function SessionForm({
 
   return (
     <form className="session-form" onSubmit={submit}>
-      <h3>{initial ? 'Edit session' : 'New session'}</h3>
+      <h3>{initial ? t('session.editSession') : t('session.newSession')}</h3>
       {error && <div className="banner error">{error}</div>}
 
       <label>
-        Name
+        {t('session.name')}
         <input
           required
           value={form.name}
@@ -94,7 +96,7 @@ export function SessionForm({
         />
       </label>
       <label>
-        Host
+        {t('session.host')}
         <input
           required
           value={form.host}
@@ -103,7 +105,7 @@ export function SessionForm({
         />
       </label>
       <label>
-        Port
+        {t('session.port')}
         <input
           type="number"
           required
@@ -115,30 +117,30 @@ export function SessionForm({
       </label>
       <label>
         <span className="field-label">
-          Username <span className="optional">(optional)</span>
+          {t('session.username')} <span className="optional">{t('common.optional')}</span>
         </span>
         <input
           value={form.username ?? ''}
           onChange={(e) => set('username', e.target.value)}
-          placeholder="Leave empty to type at connect"
+          placeholder={t('session.leaveEmptyUsername')}
         />
       </label>
       <label>
-        Auth
+        {t('session.auth')}
         <select
           value={form.authMethod}
           onChange={(e) => set('authMethod', e.target.value as AuthMethod)}
         >
-          <option value="password">Password</option>
-          <option value="privateKey">Private key</option>
-          <option value="agent">SSH agent</option>
+          <option value="password">{t('session.password')}</option>
+          <option value="privateKey">{t('session.privateKey')}</option>
+          <option value="agent">{t('session.agent')}</option>
         </select>
       </label>
 
       {form.authMethod === 'password' && (
         <label>
           <span className="field-label">
-            Password <span className="optional">(optional)</span>
+            {t('session.password')} <span className="optional">{t('common.optional')}</span>
           </span>
           <input
             type="password"
@@ -152,21 +154,21 @@ export function SessionForm({
       {form.authMethod === 'privateKey' && (
         <>
           <label className="span-2">
-            Private key path
+            {t('session.privateKeyPath')}
             <div className="path-row">
               <input
                 value={form.privateKeyPath ?? ''}
                 onChange={(e) => set('privateKeyPath', e.target.value)}
-                placeholder="Select key file…"
+                placeholder={t('session.selectKey')}
               />
               <button type="button" className="btn sm control-btn" onClick={() => void browseKey()}>
-                Browse…
+                {t('session.browse')}
               </button>
             </div>
           </label>
           <label>
             <span className="field-label">
-              Passphrase <span className="optional">(optional)</span>
+              {t('session.passphrase')} <span className="optional">{t('common.optional')}</span>
             </span>
             <input
               type="password"
@@ -185,7 +187,7 @@ export function SessionForm({
             checked={form.x11Forwarding !== false}
             onChange={(e) => set('x11Forwarding', e.target.checked)}
           />
-          X11-Forwarding
+          {t('session.x11')}
         </label>
         <label className="check-row">
           <input
@@ -193,7 +195,7 @@ export function SessionForm({
             checked={form.compression !== false}
             onChange={(e) => set('compression', e.target.checked)}
           />
-          Compression
+          {t('session.compression')}
         </label>
         <label className="check-row">
           <input
@@ -201,16 +203,16 @@ export function SessionForm({
             checked={form.backspaceSendsCtrlH !== false}
             onChange={(e) => set('backspaceSendsCtrlH', e.target.checked)}
           />
-          Backspace sends ^H
+          {t('session.backspace')}
         </label>
       </div>
 
       <div className="form-actions">
         <button type="button" className="btn" onClick={onCancel}>
-          Cancel
+          {t('common.cancel')}
         </button>
         <button type="submit" className="btn primary" disabled={saving}>
-          {saving ? 'Saving…' : 'OK'}
+          {saving ? '…' : t('common.ok')}
         </button>
       </div>
     </form>
