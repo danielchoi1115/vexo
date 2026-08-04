@@ -38,6 +38,7 @@ function isCancelled(e: unknown): boolean {
 export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
   const t = useSettingsStore((s) => s.t)
   const [path, setPath] = useState('/')
+  const [pathInput, setPathInput] = useState('/')
   const [entries, setEntries] = useState<SftpEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -59,21 +60,33 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
   const refresh = useCallback(
     async (p: string) => {
       if (!activeSessionId) return
+      const normalized = p.trim() || '/'
       setLoading(true)
       setError(null)
       try {
-        const list = await window.api.sftp.list(activeSessionId, p)
+        const list = await window.api.sftp.list(activeSessionId, normalized)
         setEntries(list)
-        setPath(p)
+        setPath(normalized)
+        setPathInput(normalized)
         setSelected(null)
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
+        setPathInput(path)
       } finally {
         setLoading(false)
       }
     },
-    [activeSessionId]
+    [activeSessionId, path]
   )
+
+  const submitPath = (): void => {
+    const next = pathInput.trim() || '/'
+    if (next === path) {
+      void refresh(next)
+      return
+    }
+    navigateUser(next)
+  }
 
   /** User navigated manually — turn off follow terminal folder */
   const navigateUser = useCallback(
@@ -88,6 +101,7 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
     if (!activeSessionId) {
       setEntries([])
       setPath('/')
+      setPathInput('/')
       return
     }
     void (async () => {
@@ -272,16 +286,35 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
       <div className="sftp-toolbar">
         <button
           type="button"
-          className="btn ghost sm"
+          className="btn header-icon sftp-refresh"
           title={t('sftp.refresh')}
           disabled={loading}
           onClick={() => void refresh(path)}
         >
-          ↻ {t('common.refresh')}
+          ↻
         </button>
-        <div className="sftp-path" title={path}>
-          {path}
-        </div>
+      </div>
+      <div className="sftp-path-row">
+        <input
+          className="sftp-path-input"
+          value={pathInput}
+          title={pathInput}
+          spellCheck={false}
+          onChange={(e) => setPathInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              submitPath()
+            }
+            if (e.key === 'Escape') {
+              setPathInput(path)
+            }
+          }}
+          onBlur={() => {
+            // Keep typed path until Enter; restore only if empty
+            if (!pathInput.trim()) setPathInput(path)
+          }}
+        />
       </div>
 
       <div className="sftp-list">

@@ -241,9 +241,6 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
           <div className="settings-content">
             {tab === 'general' && (
               <section className="settings-section">
-                <h4 className="settings-section-title">{previewT('settings.general')}</h4>
-                <p className="settings-section-desc">{previewT('settings.generalDesc')}</p>
-
                 <div className="settings-field">
                   <span className="settings-label">{previewT('settings.language')}</span>
                   <select
@@ -286,9 +283,6 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
 
             {tab === 'appearance' && (
               <section className="settings-section">
-                <h4 className="settings-section-title">{previewT('settings.appearance')}</h4>
-                <p className="settings-section-desc">{previewT('settings.appearanceDesc')}</p>
-
                 <div className="settings-field">
                   <span className="settings-label">{previewT('settings.terminalFont')}</span>
                   <FontPicker

@@ -152,10 +152,14 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
       if (!mod) return true
 
       if (ev.key === 'c' || ev.key === 'C') {
-        const sel = term.getSelection()
-        if (sel) {
-          void navigator.clipboard.writeText(sel)
-          return false // don't send interrupt when copying
+        // Copy only when text is selected (drag selection); then clear selection
+        if (term.hasSelection()) {
+          const sel = term.getSelection()
+          if (sel) {
+            void navigator.clipboard.writeText(sel)
+            term.clearSelection()
+            return false // don't send interrupt
+          }
         }
         return true // no selection → Ctrl+C to shell (SIGINT)
       }
