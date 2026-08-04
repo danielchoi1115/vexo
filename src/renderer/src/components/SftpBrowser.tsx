@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SftpEntry, TransferProgress } from '../../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -57,46 +57,55 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
   const transfers = useAppStore((s) => s.transfers)
   const updateTransfer = useAppStore((s) => s.updateTransfer)
 
-  const refresh = useCallback(
-    async (p: string) => {
-      if (!activeSessionId) return
-      const normalized = p.trim() || '/'
-      setLoading(true)
-      setError(null)
-      try {
-        const list = await window.api.sftp.list(activeSessionId, normalized)
-        setEntries(list)
-        setPath(normalized)
-        setPathInput(normalized)
-        setSelected(null)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
-        setPathInput(path)
-      } finally {
-        setLoading(false)
-      }
+  const pathRef = useRef(path)
+  pathRef.current = path
+  const followRef = useRef(follow)
+  followRef.current = follow
+  /** Ignore follow-cwd updates until user navigates settles */
+  const skipFollowRef = useRef(false)
+
+  const refresh = useCallback(async (p: string) => {
+    if (!activeSessionId) return
+    const normalized = p.trim() || '/'
+    setLoading(true)
+    setError(null)
+    try {
+      const list = await window.api.sftp.list(activeSessionId, normalized)
+      setEntries(list)
+      setPath(normalized)
+      setPathInput(normalized)
+      setSelected(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setPathInput(pathRef.current)
+    } finally {
+      setLoading(false)
+    }
+  }, [activeSessionId])
+
+  /** User navigated manually — turn off follow terminal folder */
+  const navigateUser = useCallback(
+    (p: string) => {
+      skipFollowRef.current = true
+      if (followRef.current) setFollow(false)
+      void refresh(p).finally(() => {
+        // Allow follow again only after next enable by user
+        skipFollowRef.current = false
+      })
     },
-    [activeSessionId, path]
+    [setFollow, refresh]
   )
 
   const submitPath = (): void => {
     const next = pathInput.trim() || '/'
-    if (next === path) {
+    if (next === pathRef.current) {
       void refresh(next)
       return
     }
     navigateUser(next)
   }
 
-  /** User navigated manually — turn off follow terminal folder */
-  const navigateUser = useCallback(
-    (p: string) => {
-      if (follow) setFollow(false)
-      void refresh(p)
-    },
-    [follow, setFollow, refresh]
-  )
-
+  // Load home only when the active session changes — not when refresh identity changes
   useEffect(() => {
     if (!activeSessionId) {
       setEntries([])
@@ -104,21 +113,27 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
       setPathInput('/')
       return
     }
+    let cancelled = false
     void (async () => {
       try {
         const home = await window.api.sftp.home(activeSessionId)
+        if (cancelled) return
         await refresh(home || '/')
       } catch {
-        await refresh('/')
+        if (!cancelled) await refresh('/')
       }
     })()
-  }, [activeSessionId, refresh])
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on session switch
+  }, [activeSessionId])
 
   useEffect(() => {
-    if (!follow || !activeSessionId) return
+    if (!follow || !activeSessionId || skipFollowRef.current) return
     const cwd = remoteCwd[activeSessionId]
-    if (cwd && cwd !== path) void refresh(cwd)
-  }, [follow, activeSessionId, remoteCwd, path, refresh])
+    if (cwd && cwd !== pathRef.current) void refresh(cwd)
+  }, [follow, activeSessionId, remoteCwd, refresh])
 
   useEffect(() => {
     return window.api.sftp.onProgress((p: TransferProgress) => {

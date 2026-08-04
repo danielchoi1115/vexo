@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { COLOR_SCHEMES } from '../../../shared/themes'
 import type { AppSettings, ColorSchemeId, LocaleId } from '../../../shared/types'
 import { useSettingsStore } from '../stores/settingsStore'
+import { Select } from './Select'
 
 interface Props {
   onClose: () => void
@@ -27,93 +28,6 @@ const PREFERRED_FONTS = [
 
 function isLightScheme(id: string): boolean {
   return id.includes('light') || id === 'paper' || id === 'catppuccin-latte'
-}
-
-function FontPicker({
-  value,
-  options,
-  onChange
-}: {
-  value: string
-  options: string[]
-  onChange: (font: string) => void
-}): React.JSX.Element {
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement>(null)
-  const listRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDoc = (e: PointerEvent): void => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    // capture phase so we always see outside clicks
-    document.addEventListener('pointerdown', onDoc, true)
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onDoc, true)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  useEffect(() => {
-    if (!open || !listRef.current) return
-    const active = listRef.current.querySelector('[data-active="true"]') as HTMLElement | null
-    active?.scrollIntoView({ block: 'nearest' })
-  }, [open, value])
-
-  return (
-    <div className="font-picker" ref={rootRef}>
-      <button
-        type="button"
-        className={`settings-control font-picker-trigger ${open ? 'open' : ''}`}
-        style={{ fontFamily: value }}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        onClick={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          setOpen((o) => !o)
-        }}
-      >
-        <span className="font-picker-value">{value}</span>
-        <span className="font-picker-caret">▾</span>
-      </button>
-      {open && (
-        <div
-          className="font-picker-list"
-          ref={listRef}
-          role="listbox"
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          {options.map((f) => (
-            <button
-              key={f}
-              type="button"
-              role="option"
-              data-active={f === value ? 'true' : 'false'}
-              aria-selected={f === value}
-              className={`font-picker-item ${f === value ? 'active' : ''}`}
-              style={{ fontFamily: f }}
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                onChange(f)
-                setOpen(false)
-              }}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
 }
 
 export function SettingsModal({ onClose }: Props): React.JSX.Element {
@@ -184,8 +98,12 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
   const ensureFont = (family: string): string[] =>
     family && !fonts.includes(family) ? [family, ...fonts] : fonts
 
-  const terminalFontOptions = ensureFont(draft.terminalFontFamily)
-  const uiFontOptions = ensureFont(draft.uiFontFamily)
+  const fontOptions = (family: string): { value: string; label: string; style: React.CSSProperties }[] =>
+    ensureFont(family).map((f) => ({
+      value: f,
+      label: f,
+      style: { fontFamily: f }
+    }))
 
   const patch = (partial: Partial<AppSettings>): void => {
     setDraft((d) => ({ ...d, ...partial }))
@@ -203,8 +121,6 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
   const darkSchemes = schemes.filter((s) => !isLightScheme(s.id))
   const lightSchemes = schemes.filter((s) => isLightScheme(s.id))
 
-  const previewT = (key: string, vars?: Record<string, string | number>): string => t(key, vars)
-
   return (
     <div
       className="modal-backdrop"
@@ -214,7 +130,7 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
     >
       <div className="modal settings-modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{previewT('settings.title')}</h3>
+          <h3>{t('settings.title')}</h3>
           <button type="button" className="btn ghost sm" onClick={onClose}>
             ×
           </button>
@@ -227,14 +143,14 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
               className={`settings-nav-item ${tab === 'general' ? 'active' : ''}`}
               onClick={() => setTab('general')}
             >
-              {previewT('settings.general')}
+              {t('settings.general')}
             </button>
             <button
               type="button"
               className={`settings-nav-item ${tab === 'appearance' ? 'active' : ''}`}
               onClick={() => setTab('appearance')}
             >
-              {previewT('settings.appearance')}
+              {t('settings.appearance')}
             </button>
           </nav>
 
@@ -242,15 +158,15 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
             {tab === 'general' && (
               <section className="settings-section">
                 <div className="settings-field">
-                  <span className="settings-label">{previewT('settings.language')}</span>
-                  <select
-                    className="settings-control"
+                  <span className="settings-label">{t('settings.language')}</span>
+                  <Select
                     value={draft.locale}
-                    onChange={(e) => patch({ locale: e.target.value as LocaleId })}
-                  >
-                    <option value="en">{previewT('locale.en')}</option>
-                    <option value="ko">{previewT('locale.ko')}</option>
-                  </select>
+                    onChange={(v) => patch({ locale: v as LocaleId })}
+                    options={[
+                      { value: 'en', label: t('locale.en') },
+                      { value: 'ko', label: t('locale.ko') }
+                    ]}
+                  />
                 </div>
 
                 <label className="check-row settings-check">
@@ -260,8 +176,8 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
                     onChange={(e) => patch({ pasteOnRightClick: e.target.checked })}
                   />
                   <span>
-                    <strong>{previewT('settings.pasteRightClick')}</strong>
-                    <span className="settings-hint">{previewT('settings.pasteRightClickHint')}</span>
+                    <strong>{t('settings.pasteRightClick')}</strong>
+                    <span className="settings-hint">{t('settings.pasteRightClickHint')}</span>
                   </span>
                 </label>
 
@@ -272,10 +188,8 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
                     onChange={(e) => patch({ remoteMonitoring: e.target.checked })}
                   />
                   <span>
-                    <strong>{previewT('settings.remoteMonitoring')}</strong>
-                    <span className="settings-hint">
-                      {previewT('settings.remoteMonitoringHint')}
-                    </span>
+                    <strong>{t('settings.remoteMonitoring')}</strong>
+                    <span className="settings-hint">{t('settings.remoteMonitoringHint')}</span>
                   </span>
                 </label>
               </section>
@@ -284,17 +198,18 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
             {tab === 'appearance' && (
               <section className="settings-section">
                 <div className="settings-field">
-                  <span className="settings-label">{previewT('settings.terminalFont')}</span>
-                  <FontPicker
+                  <span className="settings-label">{t('settings.terminalFont')}</span>
+                  <Select
                     value={draft.terminalFontFamily}
-                    options={terminalFontOptions}
                     onChange={(f) => patch({ terminalFontFamily: f })}
+                    options={fontOptions(draft.terminalFontFamily)}
+                    triggerStyle={{ fontFamily: draft.terminalFontFamily }}
                   />
                 </div>
 
                 <div className="settings-field">
                   <span className="settings-label">
-                    {previewT('settings.terminalFontSize', { size: draft.terminalFontSize })}
+                    {t('settings.terminalFontSize', { size: draft.terminalFontSize })}
                   </span>
                   <input
                     className="settings-control"
@@ -307,17 +222,18 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
                 </div>
 
                 <div className="settings-field">
-                  <span className="settings-label">{previewT('settings.uiFont')}</span>
-                  <FontPicker
+                  <span className="settings-label">{t('settings.uiFont')}</span>
+                  <Select
                     value={draft.uiFontFamily}
-                    options={uiFontOptions}
                     onChange={(f) => patch({ uiFontFamily: f })}
+                    options={fontOptions(draft.uiFontFamily)}
+                    triggerStyle={{ fontFamily: draft.uiFontFamily }}
                   />
                 </div>
 
                 <div className="settings-field">
                   <span className="settings-label">
-                    {previewT('settings.uiFontSize', { size: draft.uiFontSize })}
+                    {t('settings.uiFontSize', { size: draft.uiFontSize })}
                   </span>
                   <input
                     className="settings-control"
@@ -330,27 +246,22 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
                 </div>
 
                 <div className="settings-field">
-                  <span className="settings-label">{previewT('settings.theme')}</span>
-                  <select
-                    className="settings-control"
+                  <span className="settings-label">{t('settings.theme')}</span>
+                  <Select
                     value={draft.colorScheme}
-                    onChange={(e) => patch({ colorScheme: e.target.value as ColorSchemeId })}
-                  >
-                    <optgroup label={previewT('settings.dark')}>
-                      {darkSchemes.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                    <optgroup label={previewT('settings.light')}>
-                      {lightSchemes.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
+                    onChange={(v) => patch({ colorScheme: v as ColorSchemeId })}
+                    groups={[
+                      {
+                        label: t('settings.dark'),
+                        options: darkSchemes.map((s) => ({ value: s.id, label: s.name }))
+                      },
+                      {
+                        label: t('settings.light'),
+                        options: lightSchemes.map((s) => ({ value: s.id, label: s.name }))
+                      }
+                    ]}
+                    options={[]}
+                  />
                 </div>
 
                 <div className="scheme-preview">
@@ -380,13 +291,13 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
 
         <div className="form-actions settings-actions">
           <button type="button" className="btn primary" onClick={() => void onOk()}>
-            {previewT('common.ok')}
+            {t('common.ok')}
           </button>
           <button type="button" className="btn" onClick={onClose}>
-            {previewT('common.cancel')}
+            {t('common.cancel')}
           </button>
           <button type="button" className="btn" disabled={!dirty} onClick={() => void apply()}>
-            {previewT('common.apply')}
+            {t('common.apply')}
           </button>
         </div>
       </div>

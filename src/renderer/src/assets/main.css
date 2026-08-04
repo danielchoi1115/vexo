@@ -684,7 +684,8 @@ select:focus {
 .session-form > .banner,
 .session-form > .session-options,
 .session-form > .form-actions,
-.session-form > .span-2 {
+.session-form > .span-2,
+.session-form > .session-auth-field {
   grid-column: 1 / -1;
 }
 
@@ -753,7 +754,9 @@ select:focus {
   flex-direction: column;
   gap: 0;
   width: min(720px, 96vw);
-  max-height: min(85vh, 720px);
+  /* Fixed shell height so General/Appearance tabs don't resize the dialog */
+  height: min(85vh, 640px);
+  max-height: min(85vh, 640px);
   padding: 0;
   overflow: hidden;
 }
@@ -762,13 +765,14 @@ select:focus {
   padding: 14px 16px 10px;
   border-bottom: 1px solid var(--border);
   margin: 0;
+  flex-shrink: 0;
 }
 
 .settings-layout {
   display: grid;
   grid-template-columns: 160px 1fr;
   min-height: 0;
-  flex: 1;
+  flex: 1 1 auto;
   overflow: hidden;
 }
 
@@ -809,6 +813,7 @@ select:focus {
   overflow-x: hidden;
   overflow-y: auto;
   min-height: 0;
+  height: 100%;
 }
 
 .settings-section {
@@ -816,6 +821,129 @@ select:focus {
   flex-direction: column;
   gap: 14px;
   padding-bottom: 8px;
+  min-height: min-content;
+}
+
+.settings-actions {
+  flex-shrink: 0;
+}
+
+.session-auth-field {
+  min-width: 0;
+}
+
+.session-auth-field .settings-label-sm {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+/* Unified Select (Language / Theme / Auth / Fonts) */
+.ui-select {
+  position: relative;
+  width: 100%;
+}
+
+.ui-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.ui-select-trigger:hover:not(:disabled) {
+  border-color: var(--focus);
+}
+
+.ui-select-trigger.open {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--focus) 35%, transparent);
+}
+
+.ui-select-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.ui-select-caret {
+  color: var(--muted);
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.ui-select-list {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 60;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+}
+
+.ui-select-group-label {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ui-select-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font: inherit;
+}
+
+.ui-select-item:hover {
+  background: color-mix(in srgb, var(--focus) 14%, transparent);
+}
+
+.ui-select-item.active {
+  background: color-mix(in srgb, var(--focus) 22%, transparent);
+  font-weight: 600;
+}
+
+/* Session form selects match 34px control height */
+.session-form .ui-select-trigger {
+  height: 34px;
+  font-size: 13px;
 }
 
 .settings-field {
@@ -902,80 +1030,7 @@ select:focus {
   white-space: nowrap;
 }
 
-.font-picker {
-  position: relative;
-}
 
-.font-picker-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-  cursor: pointer;
-  background: var(--bg) !important;
-  border: 1px solid var(--border);
-  color: var(--text);
-}
-
-.font-picker-trigger:hover {
-  border-color: var(--focus);
-  filter: none;
-}
-
-.font-picker-trigger.open {
-  border-color: var(--focus);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--focus) 35%, transparent);
-}
-
-.font-picker-value {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.font-picker-caret {
-  color: var(--muted);
-  flex-shrink: 0;
-}
-
-.font-picker-list {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 50;
-  max-height: 220px;
-  overflow-y: auto;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
-  padding: 4px;
-}
-
-.font-picker-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  padding: 8px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.font-picker-item:hover {
-  background: color-mix(in srgb, var(--focus) 14%, transparent);
-}
-
-.font-picker-item.active {
-  background: color-mix(in srgb, var(--focus) 22%, transparent);
-  font-weight: 600;
-}
 
 .scheme-preview {
   gap: 8px;

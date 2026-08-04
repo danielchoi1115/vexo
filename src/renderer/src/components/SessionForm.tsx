@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import type { AuthMethod, SessionConfig, SessionInput } from '../../../shared/types'
 import { useSettingsStore } from '../stores/settingsStore'
+import { Select } from './Select'
 
 interface Props {
   initial?: SessionConfig | null
@@ -88,12 +89,7 @@ export function SessionForm({
 
       <label>
         {t('session.name')}
-        <input
-          required
-          value={form.name}
-          onChange={(e) => set('name', e.target.value)}
-          placeholder="prod-api"
-        />
+        <input required value={form.name} onChange={(e) => set('name', e.target.value)} />
       </label>
       <label>
         {t('session.host')}
@@ -125,17 +121,18 @@ export function SessionForm({
           placeholder={t('session.leaveEmptyUsername')}
         />
       </label>
-      <label>
-        {t('session.auth')}
-        <select
+      <div className="settings-field session-auth-field">
+        <span className="settings-label-sm">{t('session.auth')}</span>
+        <Select
           value={form.authMethod}
-          onChange={(e) => set('authMethod', e.target.value as AuthMethod)}
-        >
-          <option value="password">{t('session.password')}</option>
-          <option value="privateKey">{t('session.privateKey')}</option>
-          <option value="agent">{t('session.agent')}</option>
-        </select>
-      </label>
+          onChange={(v) => set('authMethod', v as AuthMethod)}
+          options={[
+            { value: 'password', label: t('session.password') },
+            { value: 'privateKey', label: t('session.privateKey') },
+            { value: 'agent', label: t('session.agent') }
+          ]}
+        />
+      </div>
 
       {form.authMethod === 'password' && (
         <label>
