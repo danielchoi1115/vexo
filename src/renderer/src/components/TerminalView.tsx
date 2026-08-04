@@ -69,7 +69,10 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
   const fontSize = useSettingsStore((s) => s.terminalFontSize)
   const theme = useSettingsStore((s) => s.theme)
   const pasteOnRightClick = useSettingsStore((s) => s.pasteOnRightClick)
+  const copyOnSelect = useSettingsStore((s) => s.copyOnSelect)
   const updateSettings = useSettingsStore((s) => s.update)
+  const copyOnSelectRef = useRef(copyOnSelect)
+  copyOnSelectRef.current = copyOnSelect
 
   useEffect(() => {
     activeRef.current = active
@@ -145,23 +148,37 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
       void window.api.ssh.write(activeSessionId, data)
     })
 
-    // VS Code / Windows Terminal style: Ctrl+C copies selection, Ctrl+V pastes
+    // Copy-on-select: auto-copy when drag selection is made
+    const selDisp = term.onSelectionChange(() => {
+      if (!copyOnSelectRef.current) return
+      if (!term.hasSelection()) return
+      const sel = term.getSelection()
+      if (sel) {
+        void navigator.clipboard.writeText(sel)
+      }
+    })
+
+    // Ctrl+C / Ctrl+V only when copy-on-select is OFF
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true
       const mod = ev.ctrlKey || ev.metaKey
       if (!mod) return true
 
+      if (copyOnSelectRef.current) {
+        // Selection copies automatically — let Ctrl+C/V go to the shell
+        return true
+      }
+
       if (ev.key === 'c' || ev.key === 'C') {
-        // Copy only when text is selected (drag selection); then clear selection
         if (term.hasSelection()) {
           const sel = term.getSelection()
           if (sel) {
             void navigator.clipboard.writeText(sel)
             term.clearSelection()
-            return false // don't send interrupt
+            return false
           }
         }
-        return true // no selection → Ctrl+C to shell (SIGINT)
+        return true // no selection → SIGINT
       }
 
       if (ev.key === 'v' || ev.key === 'V') {
@@ -209,6 +226,7 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
     return () => {
       unsubData()
       dataDisp.dispose()
+      selDisp.dispose()
       ro.disconnect()
       el.removeEventListener('wheel', onWheel)
       el.removeEventListener('contextmenu', onContext)

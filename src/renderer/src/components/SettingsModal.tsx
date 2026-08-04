@@ -45,7 +45,8 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
     uiFontSize: settings.uiFontSize,
     colorScheme: settings.colorScheme,
     pasteOnRightClick: settings.pasteOnRightClick,
-    remoteMonitoring: settings.remoteMonitoring
+    remoteMonitoring: settings.remoteMonitoring,
+    copyOnSelect: settings.copyOnSelect
   })
 
   useEffect(() => {
@@ -57,7 +58,8 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
       uiFontSize: settings.uiFontSize,
       colorScheme: settings.colorScheme,
       pasteOnRightClick: settings.pasteOnRightClick,
-      remoteMonitoring: settings.remoteMonitoring
+      remoteMonitoring: settings.remoteMonitoring,
+      copyOnSelect: settings.copyOnSelect
     })
   }, [
     settings.locale,
@@ -67,7 +69,8 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
     settings.uiFontSize,
     settings.colorScheme,
     settings.pasteOnRightClick,
-    settings.remoteMonitoring
+    settings.remoteMonitoring,
+    settings.copyOnSelect
   ])
 
   useEffect(() => {
@@ -91,7 +94,8 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
       draft.uiFontSize !== settings.uiFontSize ||
       draft.colorScheme !== settings.colorScheme ||
       draft.pasteOnRightClick !== settings.pasteOnRightClick ||
-      draft.remoteMonitoring !== settings.remoteMonitoring
+      draft.remoteMonitoring !== settings.remoteMonitoring ||
+      draft.copyOnSelect !== settings.copyOnSelect
     )
   }, [draft, settings])
 
@@ -178,6 +182,18 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
                   <span>
                     <strong>{t('settings.pasteRightClick')}</strong>
                     <span className="settings-hint">{t('settings.pasteRightClickHint')}</span>
+                  </span>
+                </label>
+
+                <label className="check-row settings-check">
+                  <input
+                    type="checkbox"
+                    checked={draft.copyOnSelect}
+                    onChange={(e) => patch({ copyOnSelect: e.target.checked })}
+                  />
+                  <span>
+                    <strong>{t('settings.copyOnSelect')}</strong>
+                    <span className="settings-hint">{t('settings.copyOnSelectHint')}</span>
                   </span>
                 </label>
 

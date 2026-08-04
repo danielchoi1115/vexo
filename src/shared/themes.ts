@@ -523,5 +523,6 @@ export const DEFAULT_SETTINGS = {
   uiFontSize: 13,
   colorScheme: 'github-dark' as ColorSchemeId,
   pasteOnRightClick: true,
-  remoteMonitoring: false
+  remoteMonitoring: false,
+  copyOnSelect: false
 }

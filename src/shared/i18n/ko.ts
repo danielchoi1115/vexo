@@ -103,6 +103,9 @@ export const ko: MessageTree = {
     language: '언어',
     pasteRightClick: '우클릭으로 붙여넣기',
     pasteRightClickHint: '터미널에 클립보드 텍스트 붙여넣기',
+    copyOnSelect: '선택 시 복사',
+    copyOnSelectHint:
+      '드래그로 텍스트를 선택하면 바로 복사합니다. 이 모드에서는 Ctrl+C / Ctrl+V 복붙을 끕니다.',
     remoteMonitoring: '원격 모니터링',
     remoteMonitoringHint: '호스트명, CPU, 메모리, 네트워크, 업타임, 디스크 표시',
     terminalFont: '터미널 글꼴',

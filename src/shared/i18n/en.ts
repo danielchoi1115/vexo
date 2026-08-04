@@ -101,6 +101,9 @@ export const en = {
     language: 'Language',
     pasteRightClick: 'Paste using right-click',
     pasteRightClickHint: 'Paste clipboard text into the terminal',
+    copyOnSelect: 'Copy on select',
+    copyOnSelectHint:
+      'Copy when you drag-select text. Disables Ctrl+C / Ctrl+V clipboard shortcuts.',
     remoteMonitoring: 'Remote monitoring',
     remoteMonitoringHint: 'Show hostname, CPU, memory, network, uptime, storage',
     terminalFont: 'Terminal Font Family',

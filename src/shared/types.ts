@@ -125,6 +125,12 @@ export interface AppSettings {
   colorScheme: ColorSchemeId
   pasteOnRightClick: boolean
   remoteMonitoring: boolean
+  /**
+   * When true: selecting text in the terminal copies to clipboard automatically.
+   * Ctrl+C / Ctrl+V clipboard shortcuts are disabled in that mode.
+   * When false: use Ctrl+C (with selection) / Ctrl+V for copy-paste.
+   */
+  copyOnSelect: boolean
   /** @deprecated migrated to terminal* / ui* */
   fontFamily?: string
   fontSize?: number

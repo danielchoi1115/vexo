@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useEffect, useRef, useState } from 'react'
 
 export interface SelectOption {
   value: string
   label: string
-  /** Optional style for the option label (e.g. font-family preview) */
   style?: React.CSSProperties
 }
 
@@ -11,14 +10,14 @@ interface Props {
   value: string
   options: SelectOption[]
   onChange: (value: string) => void
-  /** Optional groups: { label, options } — when set, options prop is ignored if groups provided */
   groups?: { label: string; options: SelectOption[] }[]
   className?: string
-  /** Apply style on the closed trigger (e.g. selected font) */
   triggerStyle?: React.CSSProperties
   disabled?: boolean
   'aria-label'?: string
 }
+
+const LIST_MAX_H = 220
 
 function flatten(
   options: SelectOption[],
@@ -29,8 +28,8 @@ function flatten(
 }
 
 /**
- * Unified rounded select — same UX as the terminal font picker.
- * Replaces native <select> for consistent arrows and list styling.
+ * Unified rounded select. Opens upward when there isn't enough space below
+ * so parent scroll areas don't grow.
  */
 export function Select({
   value,
@@ -43,6 +42,8 @@ export function Select({
   'aria-label': ariaLabel
 }: Props): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const [placement, setPlacement] = useState<'bottom' | 'top'>('bottom')
+  const [listPos, setListPos] = useState<React.CSSProperties>({})
   const rootRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const all = flatten(options, groups)
@@ -52,6 +53,9 @@ export function Select({
     if (!open) return
     const onDoc = (e: PointerEvent): void => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        // Fixed list is portaled visually but still under rootRef in DOM
+        const list = listRef.current
+        if (list && list.contains(e.target as Node)) return
         setOpen(false)
       }
     }
@@ -66,11 +70,77 @@ export function Select({
     }
   }, [open])
 
-  useEffect(() => {
-    if (!open || !listRef.current) return
-    const active = listRef.current.querySelector('[data-active="true"]') as HTMLElement | null
-    active?.scrollIntoView({ block: 'nearest' })
-  }, [open, value])
+  useLayoutEffect(() => {
+    if (!open || !rootRef.current) return
+
+    const place = (): void => {
+      const trigger = rootRef.current!.getBoundingClientRect()
+      const listEl = listRef.current
+      const listH = listEl
+        ? Math.min(listEl.scrollHeight, LIST_MAX_H)
+        : LIST_MAX_H
+      const gap = 4
+      const spaceBelow = window.innerHeight - trigger.bottom - gap
+      const spaceAbove = trigger.top - gap
+      const openUp = spaceBelow < Math.min(listH, 120) && spaceAbove > spaceBelow
+
+      setPlacement(openUp ? 'top' : 'bottom')
+      setListPos({
+        position: 'fixed',
+        left: trigger.left,
+        width: trigger.width,
+        maxHeight: LIST_MAX_H,
+        zIndex: 1000,
+        ...(openUp
+          ? { bottom: window.innerHeight - trigger.top + gap, top: 'auto' }
+          : { top: trigger.bottom + gap, bottom: 'auto' })
+      })
+
+      // Scroll active item inside list only (never scrollIntoView — expands parents)
+      if (listEl) {
+        const active = listEl.querySelector('[data-active="true"]') as HTMLElement | null
+        if (active) {
+          const top = active.offsetTop
+          const bottom = top + active.offsetHeight
+          if (top < listEl.scrollTop) listEl.scrollTop = top
+          else if (bottom > listEl.scrollTop + listEl.clientHeight) {
+            listEl.scrollTop = bottom - listEl.clientHeight
+          }
+        }
+      }
+    }
+
+    place()
+    // remeasure after paint when list is measured
+    requestAnimationFrame(place)
+
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [open, value, options, groups])
+
+  const renderItem = (o: SelectOption): React.JSX.Element => (
+    <button
+      key={o.value}
+      type="button"
+      role="option"
+      data-active={o.value === value ? 'true' : 'false'}
+      aria-selected={o.value === value}
+      className={`ui-select-item ${o.value === value ? 'active' : ''}`}
+      style={o.style}
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onChange(o.value)
+        setOpen(false)
+      }}
+    >
+      {o.label}
+    </button>
+  )
 
   return (
     <div className={`ui-select ${className}`} ref={rootRef}>
@@ -92,60 +162,25 @@ export function Select({
           {selected?.label ?? value}
         </span>
         <span className="ui-select-caret" aria-hidden>
-          ▾
+          {placement === 'top' && open ? '▴' : '▾'}
         </span>
       </button>
       {open && (
         <div
-          className="ui-select-list"
+          className={`ui-select-list placement-${placement}`}
           ref={listRef}
           role="listbox"
+          style={listPos}
           onPointerDown={(e) => e.stopPropagation()}
         >
           {groups?.length
             ? groups.map((g) => (
                 <div key={g.label} className="ui-select-group">
                   <div className="ui-select-group-label">{g.label}</div>
-                  {g.options.map((o) => (
-                    <button
-                      key={o.value}
-                      type="button"
-                      role="option"
-                      data-active={o.value === value ? 'true' : 'false'}
-                      aria-selected={o.value === value}
-                      className={`ui-select-item ${o.value === value ? 'active' : ''}`}
-                      style={o.style}
-                      onClick={(e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        onChange(o.value)
-                        setOpen(false)
-                      }}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
+                  {g.options.map(renderItem)}
                 </div>
               ))
-            : options.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  role="option"
-                  data-active={o.value === value ? 'true' : 'false'}
-                  aria-selected={o.value === value}
-                  className={`ui-select-item ${o.value === value ? 'active' : ''}`}
-                  style={o.style}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    onChange(o.value)
-                    setOpen(false)
-                  }}
-                >
-                  {o.label}
-                </button>
-              ))}
+            : options.map(renderItem)}
         </div>
       )}
     </div>

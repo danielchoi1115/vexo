@@ -36,7 +36,8 @@ export function getSettings(): AppSettings {
     uiFontSize: data.uiFontSize || DEFAULT_SETTINGS.uiFontSize,
     colorScheme: data.colorScheme || DEFAULT_SETTINGS.colorScheme,
     pasteOnRightClick: data.pasteOnRightClick ?? DEFAULT_SETTINGS.pasteOnRightClick,
-    remoteMonitoring: data.remoteMonitoring ?? DEFAULT_SETTINGS.remoteMonitoring
+    remoteMonitoring: data.remoteMonitoring ?? DEFAULT_SETTINGS.remoteMonitoring,
+    copyOnSelect: data.copyOnSelect ?? DEFAULT_SETTINGS.copyOnSelect
   }
 }
 
@@ -49,7 +50,8 @@ export function updateSettings(partial: Partial<AppSettings>): AppSettings {
     'uiFontSize',
     'colorScheme',
     'pasteOnRightClick',
-    'remoteMonitoring'
+    'remoteMonitoring',
+    'copyOnSelect'
   ]
   for (const key of allowed) {
     const v = partial[key]
