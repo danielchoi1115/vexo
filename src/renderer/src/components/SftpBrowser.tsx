@@ -301,12 +301,15 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
       <div className="sftp-toolbar">
         <button
           type="button"
-          className="btn header-icon sftp-refresh"
+          className="btn icon-btn sftp-refresh"
           title={t('sftp.refresh')}
           disabled={loading}
           onClick={() => void refresh(path)}
+          aria-label={t('sftp.refresh')}
         >
-          ↻
+          <span className="icon-btn-glyph" aria-hidden>
+            ↻
+          </span>
         </button>
       </div>
       <div className="sftp-path-row">

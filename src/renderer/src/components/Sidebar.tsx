@@ -32,19 +32,25 @@ export function Sidebar(): React.JSX.Element {
         <div className="sidebar-header-actions">
           <button
             type="button"
-            className="btn header-icon"
+            className="btn icon-btn"
             title={t('sidebar.newSession')}
             onClick={() => requestNewSession()}
+            aria-label={t('sidebar.newSession')}
           >
-            +
+            <span className="icon-btn-glyph" aria-hidden>
+              +
+            </span>
           </button>
           <button
             type="button"
-            className="btn header-icon"
+            className="btn icon-btn"
             title={t('common.settings')}
             onClick={() => setSettingsOpen(true)}
+            aria-label={t('common.settings')}
           >
-            ⚙
+            <span className="icon-btn-glyph icon-btn-gear" aria-hidden>
+              ⚙
+            </span>
           </button>
         </div>
       </div>

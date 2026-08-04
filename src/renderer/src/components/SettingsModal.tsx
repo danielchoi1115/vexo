@@ -135,8 +135,16 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
       <div className="modal settings-modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{t('settings.title')}</h3>
-          <button type="button" className="btn ghost sm" onClick={onClose}>
-            ×
+          <button
+            type="button"
+            className="btn icon-btn modal-close-btn"
+            onClick={onClose}
+            aria-label={t('common.cancel')}
+            title={t('common.cancel')}
+          >
+            <span className="icon-btn-glyph icon-btn-close" aria-hidden>
+              ×
+            </span>
           </button>
         </div>
 

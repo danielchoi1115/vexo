@@ -47,10 +47,13 @@ class AuthInput {
         r(line)
         return true
       }
+      // Backspace / Delete — erase buffer and always erase the visual glyph
+      // (plain char when echo, or '*' when password mode). Previously password
+      // mode skipped the terminal erase, so users could not "see" delete work.
       if (ch === '\x7f' || ch === '\b') {
         if (this.buffer.length > 0) {
           this.buffer = this.buffer.slice(0, -1)
-          if (this.echo) write('\b \b')
+          write('\b \b')
         }
         continue
       }
@@ -62,6 +65,7 @@ class AuthInput {
         r('')
         return true
       }
+      // Ignore other control chars; accept printable + tab
       if (ch >= ' ' || ch === '\t') {
         this.buffer += ch
         write(this.echo ? ch : '*')
@@ -319,6 +323,7 @@ export class SshManager {
   write(activeSessionId: string, data: string): void {
     const live = this.sessions.get(activeSessionId)
     if (!live) return
+    // During auth prompts, accept both DEL and BS as backspace (no mapping)
     if (live.auth.active) {
       live.auth.feed(data, (s) => this.termWrite(live, s))
       return

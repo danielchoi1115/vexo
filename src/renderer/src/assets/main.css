@@ -85,6 +85,70 @@ select:focus {
   gap: 6px;
 }
 
+/* Square icon buttons (+, settings, close) — true center + hover */
+.btn.icon-btn {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  line-height: 0;
+  font-size: 0; /* avoid font baseline shifting the button */
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.btn.icon-btn:hover {
+  background: color-mix(in srgb, var(--focus) 16%, transparent);
+  border-color: color-mix(in srgb, var(--focus) 35%, var(--border));
+  color: var(--text);
+  filter: none;
+}
+
+.btn.icon-btn:active {
+  background: color-mix(in srgb, var(--focus) 24%, transparent);
+}
+
+.icon-btn-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  /* Optical centering for common glyphs */
+  transform: translateY(-0.5px);
+}
+
+.icon-btn-gear {
+  font-size: 15px;
+  transform: translateY(0);
+}
+
+.icon-btn-close {
+  font-size: 20px;
+  font-weight: 300;
+  transform: translateY(-1px);
+}
+
+.modal-close-btn {
+  flex-shrink: 0;
+}
+
+/* legacy alias */
 .btn.header-icon {
   width: 30px;
   height: 30px;
