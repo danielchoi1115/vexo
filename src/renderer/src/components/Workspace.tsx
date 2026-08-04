@@ -1,14 +1,37 @@
+import { useState } from 'react'
 import { useAppStore } from '../stores/appStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { TerminalView } from './TerminalView'
-import { SftpPanel } from './SftpPanel'
+import { ContextMenu, type MenuItem } from './ContextMenu'
 
 export function Workspace(): React.JSX.Element {
   const activeSessions = useAppStore((s) => s.activeSessions)
   const focusedActiveId = useAppStore((s) => s.focusedActiveId)
   const setFocused = useAppStore((s) => s.setFocused)
   const disconnectSession = useAppStore((s) => s.disconnectSession)
-  const panel = useAppStore((s) => s.panel)
-  const setPanel = useAppStore((s) => s.setPanel)
+  const disconnectAll = useAppStore((s) => s.disconnectAll)
+  const disconnectOthers = useAppStore((s) => s.disconnectOthers)
+  const metrics = useAppStore((s) => s.metrics)
+  const remoteMonitoring = useSettingsStore((s) => s.remoteMonitoring)
+
+  const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+
+  const tabMenuItems = (id: string): MenuItem[] => [
+    {
+      label: 'Close tab',
+      onClick: () => void disconnectSession(id)
+    },
+    {
+      label: 'Close all except this tab',
+      onClick: () => void disconnectOthers(id),
+      disabled: activeSessions.length <= 1
+    },
+    {
+      label: 'Close all tabs',
+      onClick: () => void disconnectAll(),
+      danger: true
+    }
+  ]
 
   if (activeSessions.length === 0) {
     return (
@@ -16,11 +39,13 @@ export function Workspace(): React.JSX.Element {
         <div className="welcome">
           <h2>Welcome to Vexo</h2>
           <p>Double-click a saved session on the left to connect.</p>
-          <p className="muted">Terminal + SFTP share the same SSH connection.</p>
+          <p className="muted">Right-click the session list for New Session / New Folder.</p>
         </div>
       </div>
     )
   }
+
+  const focusedMetrics = focusedActiveId ? metrics[focusedActiveId] : undefined
 
   return (
     <div className="workspace">
@@ -30,12 +55,17 @@ export function Workspace(): React.JSX.Element {
             key={s.id}
             className={`tab ${s.id === focusedActiveId ? 'active' : ''}`}
             onClick={() => setFocused(s.id)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setFocused(s.id)
+              setTabMenu({ x: e.clientX, y: e.clientY, id: s.id })
+            }}
           >
             <span className={`status-dot ${s.status}`} />
             <span className="tab-label">{s.name}</span>
             <button
               className="tab-close"
-              title="Disconnect"
+              title="Close"
               onClick={(e) => {
                 e.stopPropagation()
                 void disconnectSession(s.id)
@@ -46,46 +76,54 @@ export function Workspace(): React.JSX.Element {
           </div>
         ))}
         <div className="tab-bar-spacer" />
-        <div className="panel-toggle">
-          <button
-            className={`btn sm ${panel === 'terminal' ? 'primary' : 'ghost'}`}
-            onClick={() => setPanel('terminal')}
-          >
-            Terminal
-          </button>
-          <button
-            className={`btn sm ${panel === 'sftp' ? 'primary' : 'ghost'}`}
-            onClick={() => setPanel('sftp')}
-          >
-            SFTP
-          </button>
-        </div>
       </div>
+
+      {remoteMonitoring && focusedMetrics && (
+        <div className="metrics-bar" title={focusedMetrics.error || undefined}>
+          <span>
+            <b>Host</b> {focusedMetrics.hostname}
+          </span>
+          <span>
+            <b>CPU</b> {focusedMetrics.cpu}
+          </span>
+          <span>
+            <b>Mem</b> {focusedMetrics.memory}
+          </span>
+          <span>
+            <b>Net</b> {focusedMetrics.network}
+          </span>
+          <span>
+            <b>Up</b> {focusedMetrics.uptime}
+          </span>
+          <span>
+            <b>Disk</b> {focusedMetrics.storage}
+          </span>
+        </div>
+      )}
 
       <div className="workspace-body">
         {activeSessions.map((s) => {
           const isFocused = s.id === focusedActiveId
-          // Keep xterm mounted (hidden when not focused/terminal) to preserve buffer
           return (
             <div
               key={s.id}
               className="session-pane"
               style={{ display: isFocused ? 'flex' : 'none' }}
             >
-              <div
-                className="terminal-pane"
-                style={{ display: panel === 'terminal' ? 'flex' : 'none', flex: 1, minHeight: 0 }}
-              >
-                <TerminalView
-                  activeSessionId={s.id}
-                  active={isFocused && panel === 'terminal'}
-                />
-              </div>
-              {panel === 'sftp' && isFocused && <SftpPanel activeSessionId={s.id} />}
+              <TerminalView activeSessionId={s.id} active={isFocused} />
             </div>
           )
         })}
       </div>
+
+      {tabMenu && (
+        <ContextMenu
+          x={tabMenu.x}
+          y={tabMenu.y}
+          items={tabMenuItems(tabMenu.id)}
+          onClose={() => setTabMenu(null)}
+        />
+      )}
     </div>
   )
 }

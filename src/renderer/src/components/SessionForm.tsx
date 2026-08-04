@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from 'react'
-import type { AuthMethod, SessionConfig, SessionInput } from '../../../shared/types'
+import type { AuthMethod, SessionConfig, SessionFolder, SessionInput } from '../../../shared/types'
 
 interface Props {
   initial?: SessionConfig | null
+  folders: SessionFolder[]
+  defaultFolderId?: string | null
   onSaved: () => void
   onCancel: () => void
 }
@@ -15,7 +17,13 @@ const empty: SessionInput = {
   authMethod: 'password'
 }
 
-export function SessionForm({ initial, onSaved, onCancel }: Props): React.JSX.Element {
+export function SessionForm({
+  initial,
+  folders,
+  defaultFolderId,
+  onSaved,
+  onCancel
+}: Props): React.JSX.Element {
   const [form, setForm] = useState<SessionInput>({
     ...empty,
     ...(initial
@@ -26,10 +34,10 @@ export function SessionForm({ initial, onSaved, onCancel }: Props): React.JSX.El
           username: initial.username,
           authMethod: initial.authMethod,
           privateKeyPath: initial.privateKeyPath,
-          group: initial.group,
+          folderId: initial.folderId ?? null,
           color: initial.color
         }
-      : {})
+      : { folderId: defaultFolderId ?? null })
   })
   const [password, setPassword] = useState('')
   const [passphrase, setPassphrase] = useState('')
@@ -40,6 +48,11 @@ export function SessionForm({ initial, onSaved, onCancel }: Props): React.JSX.El
     setForm((f) => ({ ...f, [key]: value }))
   }
 
+  const browseKey = async (): Promise<void> => {
+    const path = await window.api.dialog.pickPrivateKey()
+    if (path) set('privateKeyPath', path)
+  }
+
   const submit = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
     setSaving(true)
@@ -48,6 +61,7 @@ export function SessionForm({ initial, onSaved, onCancel }: Props): React.JSX.El
       await window.api.sessions.save({
         ...form,
         id: initial?.id,
+        username: form.username || '',
         password: password || undefined,
         passphrase: passphrase || undefined
       })
@@ -94,12 +108,11 @@ export function SessionForm({ initial, onSaved, onCancel }: Props): React.JSX.El
         />
       </label>
       <label>
-        Username
+        Username <span className="optional">(optional — prompt in terminal)</span>
         <input
-          required
-          value={form.username}
+          value={form.username ?? ''}
           onChange={(e) => set('username', e.target.value)}
-          placeholder="root"
+          placeholder="Leave empty to type at connect"
         />
       </label>
       <label>
@@ -116,7 +129,12 @@ export function SessionForm({ initial, onSaved, onCancel }: Props): React.JSX.El
 
       {form.authMethod === 'password' && (
         <label>
-          Password {initial?.hasCredential ? '(stored — leave blank to keep)' : ''}
+          Password{' '}
+          <span className="optional">
+            {initial?.hasCredential
+              ? '(stored — leave blank to keep)'
+              : '(optional — prompt in terminal)'}
+          </span>
           <input
             type="password"
             value={password}
@@ -130,15 +148,19 @@ export function SessionForm({ initial, onSaved, onCancel }: Props): React.JSX.El
         <>
           <label>
             Private key path
-            <input
-              required={!initial}
-              value={form.privateKeyPath ?? ''}
-              onChange={(e) => set('privateKeyPath', e.target.value)}
-              placeholder="C:\Users\you\.ssh\id_rsa"
-            />
+            <div className="path-row">
+              <input
+                value={form.privateKeyPath ?? ''}
+                onChange={(e) => set('privateKeyPath', e.target.value)}
+                placeholder="Select key file…"
+              />
+              <button type="button" className="btn sm" onClick={() => void browseKey()}>
+                Browse…
+              </button>
+            </div>
           </label>
           <label>
-            Passphrase {initial?.hasCredential ? '(stored — leave blank to keep)' : '(optional)'}
+            Passphrase <span className="optional">(optional)</span>
             <input
               type="password"
               value={passphrase}
@@ -150,12 +172,18 @@ export function SessionForm({ initial, onSaved, onCancel }: Props): React.JSX.El
       )}
 
       <label>
-        Group
-        <input
-          value={form.group ?? ''}
-          onChange={(e) => set('group', e.target.value || undefined)}
-          placeholder="Production"
-        />
+        Folder
+        <select
+          value={form.folderId ?? ''}
+          onChange={(e) => set('folderId', e.target.value || null)}
+        >
+          <option value="">(root)</option>
+          {folders.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+            </option>
+          ))}
+        </select>
       </label>
 
       <div className="form-actions">

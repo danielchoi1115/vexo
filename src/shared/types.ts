@@ -1,20 +1,37 @@
 export type AuthMethod = 'password' | 'privateKey' | 'agent'
 
+export type ColorSchemeId =
+  | 'github-dark'
+  | 'dracula'
+  | 'monokai'
+  | 'solarized-dark'
+  | 'nord'
+  | 'one-dark'
+
+export interface SessionFolder {
+  id: string
+  name: string
+  order: number
+  collapsed: boolean
+}
+
 export interface SessionConfig {
   id: string
   name: string
   host: string
   port: number
+  /** Optional — if empty, prompted in the terminal */
   username: string
   authMethod: AuthMethod
-  /** Relative path under user data or absolute path to private key file */
   privateKeyPath?: string
-  group?: string
+  /** Folder id, or null/undefined for root */
+  folderId?: string | null
+  /** Sort order within folder/root */
+  order: number
   color?: string
   tags?: string[]
   favorite?: boolean
   lastConnectedAt?: number
-  /** Whether a credential is stored for this session (never the secret itself) */
   hasCredential?: boolean
 }
 
@@ -22,14 +39,14 @@ export interface SessionInput {
   name: string
   host: string
   port: number
-  username: string
+  username?: string
   authMethod: AuthMethod
   privateKeyPath?: string
-  group?: string
+  folderId?: string | null
+  order?: number
   color?: string
   tags?: string[]
   favorite?: boolean
-  /** Plain password or key passphrase — stored encrypted, never returned as plain text later */
   password?: string
   passphrase?: string
 }
@@ -42,6 +59,8 @@ export interface ActiveSessionInfo {
   name: string
   status: ConnectionStatus
   error?: string
+  /** Remote cwd tracked via shell OSC / follow mode */
+  remoteCwd?: string
 }
 
 export interface SftpEntry {
@@ -51,6 +70,7 @@ export interface SftpEntry {
   size: number
   modifyTime: number
   accessTime: number
+  mode?: number
   rights?: { user: string; group: string; other: string }
   owner?: number
   group?: number
@@ -69,18 +89,55 @@ export interface TransferProgress {
 
 export interface ConnectOptions {
   sessionConfigId: string
-  /** One-shot password if not stored */
   password?: string
   passphrase?: string
 }
 
-/** API exposed to renderer via contextBridge */
+export interface AppSettings {
+  fontFamily: string
+  fontSize: number
+  colorScheme: ColorSchemeId
+  pasteOnRightClick: boolean
+  remoteMonitoring: boolean
+}
+
+export interface RemoteMetrics {
+  activeSessionId: string
+  hostname: string
+  cpu: string
+  memory: string
+  network: string
+  uptime: string
+  storage: string
+  error?: string
+}
+
+export interface TreeReorderPayload {
+  /** session or folder id being moved */
+  dragId: string
+  dragType: 'session' | 'folder'
+  /** target folder id, or null for root */
+  targetFolderId: string | null
+  /** index among siblings after move */
+  targetIndex: number
+}
+
 export interface VexoApi {
   sessions: {
     list: () => Promise<SessionConfig[]>
+    listFolders: () => Promise<SessionFolder[]>
     save: (input: SessionInput & { id?: string }) => Promise<SessionConfig>
     delete: (id: string) => Promise<void>
     setFavorite: (id: string, favorite: boolean) => Promise<SessionConfig>
+    createFolder: (name: string) => Promise<SessionFolder>
+    renameFolder: (id: string, name: string) => Promise<SessionFolder>
+    deleteFolder: (id: string) => Promise<void>
+    setFolderCollapsed: (id: string, collapsed: boolean) => Promise<SessionFolder>
+    reorder: (payload: TreeReorderPayload) => Promise<void>
+  }
+  settings: {
+    get: () => Promise<AppSettings>
+    set: (partial: Partial<AppSettings>) => Promise<AppSettings>
   }
   ssh: {
     connect: (options: ConnectOptions) => Promise<ActiveSessionInfo>
@@ -90,6 +147,8 @@ export interface VexoApi {
     listActive: () => Promise<ActiveSessionInfo[]>
     onData: (callback: (activeSessionId: string, data: string) => void) => () => void
     onStatus: (callback: (info: ActiveSessionInfo) => void) => () => void
+    onCwd: (callback: (activeSessionId: string, cwd: string) => void) => () => void
+    onMetrics: (callback: (metrics: RemoteMetrics) => void) => () => void
   }
   sftp: {
     list: (activeSessionId: string, remotePath: string) => Promise<SftpEntry[]>
@@ -102,6 +161,10 @@ export interface VexoApi {
       remotePath: string,
       localPath?: string
     ) => Promise<{ transferId: string; localPath: string }>
+    downloadToDesktop: (
+      activeSessionId: string,
+      remotePath: string
+    ) => Promise<{ transferId: string; localPath: string }>
     upload: (
       activeSessionId: string,
       localPath: string,
@@ -109,9 +172,17 @@ export interface VexoApi {
     ) => Promise<{ transferId: string }>
     pickLocalFiles: () => Promise<string[]>
     pickSavePath: (defaultName: string) => Promise<string | null>
+    startDrag: (localPath: string) => void
     onProgress: (callback: (progress: TransferProgress) => void) => () => void
+  }
+  dialog: {
+    pickPrivateKey: () => Promise<string | null>
   }
   path: {
     getPathForFile: (file: File) => string
+    desktop: () => Promise<string>
+  }
+  clipboard: {
+    writeText: (text: string) => Promise<void>
   }
 }

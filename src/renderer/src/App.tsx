@@ -1,22 +1,41 @@
 import { useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
+import { SettingsModal } from './components/SettingsModal'
 import { useAppStore } from './stores/appStore'
+import { useSettingsStore } from './stores/settingsStore'
 
 function App(): React.JSX.Element {
   const loadSessions = useAppStore((s) => s.loadSessions)
   const upsertActive = useAppStore((s) => s.upsertActive)
+  const setRemoteCwd = useAppStore((s) => s.setRemoteCwd)
+  const setMetrics = useAppStore((s) => s.setMetrics)
   const error = useAppStore((s) => s.error)
   const setError = useAppStore((s) => s.setError)
   const connecting = useAppStore((s) => s.connecting)
+  const settingsOpen = useAppStore((s) => s.settingsOpen)
+  const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
+  const loadSettings = useSettingsStore((s) => s.load)
 
   useEffect(() => {
+    void loadSettings()
     void loadSessions()
-    const off = window.api.ssh.onStatus((info) => {
+
+    const offStatus = window.api.ssh.onStatus((info) => {
       upsertActive(info)
     })
-    return off
-  }, [loadSessions, upsertActive])
+    const offCwd = window.api.ssh.onCwd((id, cwd) => {
+      setRemoteCwd(id, cwd)
+    })
+    const offMetrics = window.api.ssh.onMetrics((m) => {
+      setMetrics(m)
+    })
+    return () => {
+      offStatus()
+      offCwd()
+      offMetrics()
+    }
+  }, [loadSessions, loadSettings, upsertActive, setRemoteCwd, setMetrics])
 
   return (
     <div className="app-shell">
@@ -24,7 +43,7 @@ function App(): React.JSX.Element {
       <main className="main">
         {(error || connecting) && (
           <div className={`top-banner ${error ? 'error' : 'info'}`}>
-            {connecting ? 'Connecting…' : error}
+            {connecting ? 'Connecting… (enter credentials in the terminal if prompted)' : error}
             {error && (
               <button className="btn ghost sm" onClick={() => setError(null)}>
                 Dismiss
@@ -34,6 +53,7 @@ function App(): React.JSX.Element {
         )}
         <Workspace />
       </main>
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>
   )
 }

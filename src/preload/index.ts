@@ -1,11 +1,12 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   ActiveSessionInfo,
+  AppSettings,
   ConnectOptions,
-  SessionConfig,
+  RemoteMetrics,
   SessionInput,
-  SftpEntry,
   TransferProgress,
+  TreeReorderPayload,
   VexoApi
 } from '../shared/types'
 
@@ -25,10 +26,22 @@ function onChannel<T extends unknown[]>(
 const api: VexoApi = {
   sessions: {
     list: () => ipcRenderer.invoke('sessions:list'),
+    listFolders: () => ipcRenderer.invoke('sessions:listFolders'),
     save: (input: SessionInput & { id?: string }) => ipcRenderer.invoke('sessions:save', input),
     delete: (id: string) => ipcRenderer.invoke('sessions:delete', id),
     setFavorite: (id: string, favorite: boolean) =>
-      ipcRenderer.invoke('sessions:setFavorite', id, favorite)
+      ipcRenderer.invoke('sessions:setFavorite', id, favorite),
+    createFolder: (name: string) => ipcRenderer.invoke('sessions:createFolder', name),
+    renameFolder: (id: string, name: string) =>
+      ipcRenderer.invoke('sessions:renameFolder', id, name),
+    deleteFolder: (id: string) => ipcRenderer.invoke('sessions:deleteFolder', id),
+    setFolderCollapsed: (id: string, collapsed: boolean) =>
+      ipcRenderer.invoke('sessions:setFolderCollapsed', id, collapsed),
+    reorder: (payload: TreeReorderPayload) => ipcRenderer.invoke('sessions:reorder', payload)
+  },
+  settings: {
+    get: () => ipcRenderer.invoke('settings:get'),
+    set: (partial: Partial<AppSettings>) => ipcRenderer.invoke('settings:set', partial)
   },
   ssh: {
     connect: (options: ConnectOptions) => ipcRenderer.invoke('ssh:connect', options),
@@ -38,37 +51,49 @@ const api: VexoApi = {
     resize: (activeSessionId: string, cols: number, rows: number) =>
       ipcRenderer.invoke('ssh:resize', activeSessionId, cols, rows),
     listActive: () => ipcRenderer.invoke('ssh:listActive'),
-    onData: (callback: (activeSessionId: string, data: string) => void) =>
-      onChannel<[string, string]>('ssh:data', callback),
+    onData: (callback) => onChannel<[string, string]>('ssh:data', callback),
     onStatus: (callback: (info: ActiveSessionInfo) => void) =>
-      onChannel<[ActiveSessionInfo]>('ssh:status', callback)
+      onChannel<[ActiveSessionInfo]>('ssh:status', callback),
+    onCwd: (callback: (activeSessionId: string, cwd: string) => void) =>
+      onChannel<[string, string]>('ssh:cwd', callback),
+    onMetrics: (callback: (metrics: RemoteMetrics) => void) =>
+      onChannel<[RemoteMetrics]>('ssh:metrics', callback)
   },
   sftp: {
-    list: (activeSessionId: string, remotePath: string) =>
+    list: (activeSessionId, remotePath) =>
       ipcRenderer.invoke('sftp:list', activeSessionId, remotePath),
-    mkdir: (activeSessionId: string, remotePath: string) =>
+    mkdir: (activeSessionId, remotePath) =>
       ipcRenderer.invoke('sftp:mkdir', activeSessionId, remotePath),
-    rename: (activeSessionId: string, from: string, to: string) =>
+    rename: (activeSessionId, from, to) =>
       ipcRenderer.invoke('sftp:rename', activeSessionId, from, to),
-    remove: (activeSessionId: string, remotePath: string, isDir: boolean) =>
+    remove: (activeSessionId, remotePath, isDir) =>
       ipcRenderer.invoke('sftp:remove', activeSessionId, remotePath, isDir),
-    chmod: (activeSessionId: string, remotePath: string, mode: string) =>
+    chmod: (activeSessionId, remotePath, mode) =>
       ipcRenderer.invoke('sftp:chmod', activeSessionId, remotePath, mode),
-    download: (activeSessionId: string, remotePath: string, localPath?: string) =>
+    download: (activeSessionId, remotePath, localPath) =>
       ipcRenderer.invoke('sftp:download', activeSessionId, remotePath, localPath),
-    upload: (activeSessionId: string, localPath: string, remotePath: string) =>
+    downloadToDesktop: (activeSessionId, remotePath) =>
+      ipcRenderer.invoke('sftp:downloadToDesktop', activeSessionId, remotePath),
+    upload: (activeSessionId, localPath, remotePath) =>
       ipcRenderer.invoke('sftp:upload', activeSessionId, localPath, remotePath),
     pickLocalFiles: () => ipcRenderer.invoke('sftp:pickLocalFiles'),
-    pickSavePath: (defaultName: string) => ipcRenderer.invoke('sftp:pickSavePath', defaultName),
+    pickSavePath: (defaultName) => ipcRenderer.invoke('sftp:pickSavePath', defaultName),
+    startDrag: (localPath: string) => {
+      ipcRenderer.send('sftp:startDrag', localPath)
+    },
     onProgress: (callback: (progress: TransferProgress) => void) =>
       onChannel<[TransferProgress]>('sftp:progress', callback)
   },
+  dialog: {
+    pickPrivateKey: () => ipcRenderer.invoke('dialog:pickPrivateKey')
+  },
   path: {
-    getPathForFile: (file: File) => webUtils.getPathForFile(file)
+    getPathForFile: (file: File) => webUtils.getPathForFile(file),
+    desktop: () => ipcRenderer.invoke('path:desktop')
+  },
+  clipboard: {
+    writeText: (text: string) => ipcRenderer.invoke('clipboard:writeText', text)
   }
 }
 
 contextBridge.exposeInMainWorld('api', api)
-
-// Keep type-only exports happy for consumers importing SessionConfig etc. in d.ts
-export type { SessionConfig, SftpEntry }

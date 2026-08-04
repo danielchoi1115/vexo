@@ -1,54 +1,79 @@
 import { create } from 'zustand'
-import type { ActiveSessionInfo, SessionConfig, TransferProgress } from '../../../shared/types'
+import type {
+  ActiveSessionInfo,
+  RemoteMetrics,
+  SessionConfig,
+  SessionFolder,
+  TransferProgress
+} from '../../../shared/types'
 
-export type MainPanel = 'terminal' | 'sftp'
+export type SidebarTab = 'sessions' | 'sftp'
 
 interface AppState {
   sessions: SessionConfig[]
+  folders: SessionFolder[]
   activeSessions: ActiveSessionInfo[]
   focusedActiveId: string | null
-  panel: MainPanel
+  sidebarTab: SidebarTab
   transfers: TransferProgress[]
   connecting: boolean
   error: string | null
+  followTerminalFolder: boolean
+  remoteCwd: Record<string, string>
+  metrics: Record<string, RemoteMetrics>
+  settingsOpen: boolean
 
   loadSessions: () => Promise<void>
-  setPanel: (panel: MainPanel) => void
+  setSidebarTab: (tab: SidebarTab) => void
   setFocused: (id: string | null) => void
   setError: (msg: string | null) => void
-  connectSession: (sessionConfigId: string, password?: string, passphrase?: string) => Promise<void>
+  setFollowTerminalFolder: (v: boolean) => void
+  setSettingsOpen: (v: boolean) => void
+  connectSession: (sessionConfigId: string) => Promise<void>
   disconnectSession: (activeId: string) => Promise<void>
+  disconnectAll: () => Promise<void>
+  disconnectOthers: (keepId: string) => Promise<void>
   upsertActive: (info: ActiveSessionInfo) => void
-  removeActive: (id: string) => void
+  setRemoteCwd: (activeId: string, cwd: string) => void
+  setMetrics: (m: RemoteMetrics) => void
   updateTransfer: (p: TransferProgress) => void
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   sessions: [],
+  folders: [],
   activeSessions: [],
   focusedActiveId: null,
-  panel: 'terminal',
+  sidebarTab: 'sessions',
   transfers: [],
   connecting: false,
   error: null,
+  followTerminalFolder: false,
+  remoteCwd: {},
+  metrics: {},
+  settingsOpen: false,
 
   loadSessions: async () => {
-    const sessions = await window.api.sessions.list()
-    set({ sessions })
+    const [sessions, folders] = await Promise.all([
+      window.api.sessions.list(),
+      window.api.sessions.listFolders()
+    ])
+    set({ sessions, folders })
   },
 
-  setPanel: (panel) => set({ panel }),
+  setSidebarTab: (tab) => set({ sidebarTab: tab }),
   setFocused: (id) => set({ focusedActiveId: id }),
   setError: (msg) => set({ error: msg }),
+  setFollowTerminalFolder: (v) => set({ followTerminalFolder: v }),
+  setSettingsOpen: (v) => set({ settingsOpen: v }),
 
-  connectSession: async (sessionConfigId, password, passphrase) => {
+  connectSession: async (sessionConfigId) => {
     set({ connecting: true, error: null })
     try {
-      const info = await window.api.ssh.connect({ sessionConfigId, password, passphrase })
+      const info = await window.api.ssh.connect({ sessionConfigId })
       set((s) => ({
         activeSessions: [...s.activeSessions.filter((a) => a.id !== info.id), info],
         focusedActiveId: info.id,
-        panel: 'terminal',
         connecting: false
       }))
       await get().loadSessions()
@@ -71,45 +96,60 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
+  disconnectAll: async () => {
+    const ids = get().activeSessions.map((a) => a.id)
+    await Promise.all(ids.map((id) => window.api.ssh.disconnect(id)))
+    set({ activeSessions: [], focusedActiveId: null })
+  },
+
+  disconnectOthers: async (keepId) => {
+    const others = get().activeSessions.filter((a) => a.id !== keepId)
+    await Promise.all(others.map((a) => window.api.ssh.disconnect(a.id)))
+    set((s) => ({
+      activeSessions: s.activeSessions.filter((a) => a.id === keepId),
+      focusedActiveId: keepId
+    }))
+  },
+
   upsertActive: (info) => {
     set((s) => {
       const idx = s.activeSessions.findIndex((a) => a.id === info.id)
-      const activeSessions = [...s.activeSessions]
-      if (idx >= 0) activeSessions[idx] = info
+      let activeSessions = [...s.activeSessions]
+      if (idx >= 0) activeSessions[idx] = { ...activeSessions[idx], ...info }
       else activeSessions.push(info)
 
-      // drop fully disconnected from tabs after status update (optional keep for history)
-      const filtered =
-        info.status === 'disconnected' || info.status === 'error'
-          ? activeSessions.filter((a) => a.id !== info.id)
-          : activeSessions
+      if (info.status === 'disconnected' || info.status === 'error') {
+        // keep error tabs briefly only for disconnected remove
+        if (info.status === 'disconnected') {
+          activeSessions = activeSessions.filter((a) => a.id !== info.id)
+        }
+      }
 
       const focusedActiveId =
-        s.focusedActiveId === info.id &&
-        (info.status === 'disconnected' || info.status === 'error')
-          ? (filtered[filtered.length - 1]?.id ?? null)
+        s.focusedActiveId === info.id && info.status === 'disconnected'
+          ? (activeSessions[activeSessions.length - 1]?.id ?? null)
           : s.focusedActiveId
 
-      return { activeSessions: filtered, focusedActiveId }
+      return { activeSessions, focusedActiveId }
     })
   },
 
-  removeActive: (id) => {
-    set((s) => ({
-      activeSessions: s.activeSessions.filter((a) => a.id !== id),
-      focusedActiveId: s.focusedActiveId === id ? null : s.focusedActiveId
-    }))
+  setRemoteCwd: (activeId, cwd) => {
+    set((s) => ({ remoteCwd: { ...s.remoteCwd, [activeId]: cwd } }))
+  },
+
+  setMetrics: (m) => {
+    set((s) => ({ metrics: { ...s.metrics, [m.activeSessionId]: m } }))
   },
 
   updateTransfer: (p) => {
     set((s) => {
       const others = s.transfers.filter((t) => t.transferId !== p.transferId)
-      const transfers = p.done && !p.error ? others : [...others, p]
-      // keep completed errors briefly
-      if (p.done && p.error) {
+      if (p.done && !p.error) {
+        // keep completed briefly then drop on next update; for UX keep done for a moment
         return { transfers: [...others, p] }
       }
-      return { transfers }
+      return { transfers: [...others, p] }
     })
   }
 }))
