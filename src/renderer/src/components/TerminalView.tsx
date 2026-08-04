@@ -145,6 +145,31 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
       void window.api.ssh.write(activeSessionId, data)
     })
 
+    // VS Code / Windows Terminal style: Ctrl+C copies selection, Ctrl+V pastes
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type !== 'keydown') return true
+      const mod = ev.ctrlKey || ev.metaKey
+      if (!mod) return true
+
+      if (ev.key === 'c' || ev.key === 'C') {
+        const sel = term.getSelection()
+        if (sel) {
+          void navigator.clipboard.writeText(sel)
+          return false // don't send interrupt when copying
+        }
+        return true // no selection → Ctrl+C to shell (SIGINT)
+      }
+
+      if (ev.key === 'v' || ev.key === 'V') {
+        void navigator.clipboard.readText().then((text) => {
+          if (text) void window.api.ssh.write(activeSessionId, text)
+        })
+        return false
+      }
+
+      return true
+    })
+
     const resize = (): void => {
       fit.fit()
       void window.api.ssh.resize(activeSessionId, term.cols, term.rows)

@@ -224,7 +224,10 @@ export function reorder(payload: TreeReorderPayload): void {
     .filter((s) => (s.folderId ?? null) === (targetFolderId ?? null))
     .sort((a, b) => a.order - b.order)
 
-  const moved: SessionConfig = { ...drag, folderId: targetFolderId }
+  const moved: SessionConfig = {
+    ...drag,
+    folderId: targetFolderId === undefined ? null : targetFolderId
+  }
   const idx = Math.max(0, Math.min(targetIndex, siblings.length))
   siblings.splice(idx, 0, moved)
 
@@ -233,4 +236,108 @@ export function reorder(payload: TreeReorderPayload): void {
   const rest = others.filter((s) => !siblingIds.has(s.id))
 
   store.set('sessions', [...rest, ...reorderedSiblings])
+}
+
+export interface SessionsExportFile {
+  version: 1
+  exportedAt: string
+  folders: SessionFolder[]
+  sessions: Omit<SessionConfig, 'hasCredential'>[]
+}
+
+export function exportData(): SessionsExportFile {
+  const sessions = store.get('sessions').map((s) => {
+    const stripped = stripSecrets(s)
+    const { hasCredential: _ignored, ...rest } = stripped
+    return rest
+  })
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    folders: listFolders(),
+    sessions
+  }
+}
+
+export function importData(
+  data: SessionsExportFile,
+  mode: 'merge' | 'replace' = 'merge'
+): { folders: number; sessions: number } {
+  if (!data || data.version !== 1 || !Array.isArray(data.sessions)) {
+    throw new Error('Invalid session export file')
+  }
+
+  if (mode === 'replace') {
+    store.set('folders', [])
+    store.set('sessions', [])
+  }
+
+  const folderIdMap = new Map<string, string>()
+  const existingFolders = store.get('folders')
+  let foldersAdded = 0
+
+  for (const f of data.folders ?? []) {
+    const existing = existingFolders.find((x) => x.name === f.name)
+    if (existing) {
+      folderIdMap.set(f.id, existing.id)
+      continue
+    }
+    const newId = crypto.randomUUID()
+    folderIdMap.set(f.id, newId)
+    existingFolders.push({
+      id: newId,
+      name: f.name,
+      order: existingFolders.length,
+      collapsed: f.collapsed ?? false
+    })
+    foldersAdded++
+  }
+  store.set('folders', existingFolders)
+
+  const sessions = store.get('sessions')
+  let sessionsAdded = 0
+  for (const s of data.sessions) {
+    const mappedFolder =
+      s.folderId && folderIdMap.has(s.folderId)
+        ? folderIdMap.get(s.folderId)!
+        : s.folderId
+          ? existingFolders.find((f) => f.id === s.folderId)?.id ?? null
+          : null
+
+    // Skip exact host+port+user+name duplicates on merge
+    if (
+      mode === 'merge' &&
+      sessions.some(
+        (x) =>
+          x.name === s.name &&
+          x.host === s.host &&
+          x.port === s.port &&
+          x.username === s.username
+      )
+    ) {
+      continue
+    }
+
+    const id = crypto.randomUUID()
+    sessions.push({
+      id,
+      name: s.name,
+      host: s.host,
+      port: s.port || 22,
+      username: s.username ?? '',
+      authMethod: s.authMethod ?? 'password',
+      privateKeyPath: s.privateKeyPath,
+      folderId: mappedFolder,
+      order: sessions.length,
+      color: s.color,
+      tags: s.tags,
+      favorite: s.favorite ?? false,
+      x11Forwarding: s.x11Forwarding !== false,
+      compression: s.compression !== false,
+      backspaceSendsCtrlH: s.backspaceSendsCtrlH !== false
+    })
+    sessionsAdded++
+  }
+  store.set('sessions', sessions)
+  return { folders: foldersAdded, sessions: sessionsAdded }
 }

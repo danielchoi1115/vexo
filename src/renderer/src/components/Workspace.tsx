@@ -11,10 +11,15 @@ export function Workspace(): React.JSX.Element {
   const disconnectSession = useAppStore((s) => s.disconnectSession)
   const disconnectAll = useAppStore((s) => s.disconnectAll)
   const disconnectOthers = useAppStore((s) => s.disconnectOthers)
+  const disconnectDisconnected = useAppStore((s) => s.disconnectDisconnected)
   const metrics = useAppStore((s) => s.metrics)
   const remoteMonitoring = useSettingsStore((s) => s.remoteMonitoring)
 
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+
+  const hasDisconnected = activeSessions.some(
+    (a) => a.status === 'disconnected' || a.status === 'error'
+  )
 
   const tabMenuItems = (id: string): MenuItem[] => [
     {
@@ -25,6 +30,11 @@ export function Workspace(): React.JSX.Element {
       label: 'Close all except this tab',
       onClick: () => void disconnectOthers(id),
       disabled: activeSessions.length <= 1
+    },
+    {
+      label: 'Close all disconnected',
+      onClick: () => void disconnectDisconnected(),
+      disabled: !hasDisconnected
     },
     {
       label: 'Close all tabs',

@@ -150,6 +150,10 @@ export interface VexoApi {
     deleteFolder: (id: string) => Promise<void>
     setFolderCollapsed: (id: string, collapsed: boolean) => Promise<SessionFolder>
     reorder: (payload: TreeReorderPayload) => Promise<void>
+    export: () => Promise<{ ok: false } | { ok: true; path: string }>
+    import: (
+      mode?: 'merge' | 'replace'
+    ) => Promise<{ ok: false } | { ok: true; folders: number; sessions: number; path: string }>
   }
   settings: {
     get: () => Promise<AppSettings>

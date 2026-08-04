@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionConfig, SessionFolder } from '../../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { ContextMenu, type MenuItem } from './ContextMenu'
@@ -15,12 +15,14 @@ type PromptState =
   | { kind: 'rename-folder'; folder: SessionFolder }
   | null
 
+/** Module-level drag payload — Chromium sometimes drops custom mime types on drop */
+let activeDrag: { type: 'session' | 'folder'; id: string } | null = null
+
 export function SessionTree(): React.JSX.Element {
   const sessions = useAppStore((s) => s.sessions)
   const folders = useAppStore((s) => s.folders)
   const loadSessions = useAppStore((s) => s.loadSessions)
   const connectSession = useAppStore((s) => s.connectSession)
-  const connecting = useAppStore((s) => s.connecting)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const newSessionRequestId = useAppStore((s) => s.newSessionRequestId)
 
@@ -28,11 +30,14 @@ export function SessionTree(): React.JSX.Element {
   const [editing, setEditing] = useState<SessionConfig | null | 'new'>(null)
   const [defaultFolderId, setDefaultFolderId] = useState<string | null>(null)
   const [menu, setMenu] = useState<Ctx | null>(null)
-  const [dragOver, setDragOver] = useState<string | null>(null)
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const [prompt, setPrompt] = useState<PromptState>(null)
+  const lastNewSessionReq = useRef(0)
 
+  // Only open New Session when + actually increments the request id (not on remount)
   useEffect(() => {
-    if (newSessionRequestId > 0) {
+    if (newSessionRequestId > 0 && newSessionRequestId !== lastNewSessionReq.current) {
+      lastNewSessionReq.current = newSessionRequestId
       setDefaultFolderId(null)
       setEditing('new')
     }
@@ -83,6 +88,44 @@ export function SessionTree(): React.JSX.Element {
     { label: 'New Session', onClick: () => openNewSession(null) },
     { label: 'New Folder', onClick: () => setPrompt({ kind: 'new-folder' }) },
     { separator: true, label: '', onClick: () => {} },
+    {
+      label: 'Export sessions…',
+      onClick: () => {
+        void window.api.sessions.export().then((r) => {
+          if (r.ok) window.alert(`Exported to:\n${r.path}`)
+        })
+      }
+    },
+    {
+      label: 'Import sessions (merge)…',
+      onClick: () => {
+        void window.api.sessions
+          .import('merge')
+          .then((r) => {
+            if (r.ok) {
+              void loadSessions()
+              window.alert(`Imported ${r.sessions} session(s), ${r.folders} folder(s).`)
+            }
+          })
+          .catch((e: Error) => window.alert(e.message))
+      }
+    },
+    {
+      label: 'Import sessions (replace)…',
+      onClick: () => {
+        if (!window.confirm('Replace all current sessions and folders?')) return
+        void window.api.sessions
+          .import('replace')
+          .then((r) => {
+            if (r.ok) {
+              void loadSessions()
+              window.alert(`Replaced with ${r.sessions} session(s), ${r.folders} folder(s).`)
+            }
+          })
+          .catch((e: Error) => window.alert(e.message))
+      }
+    },
+    { separator: true, label: '', onClick: () => {} },
     { label: 'Settings', onClick: () => setSettingsOpen(true) }
   ]
 
@@ -129,34 +172,76 @@ export function SessionTree(): React.JSX.Element {
     }
   ]
 
-  const onDragStart = (e: React.DragEvent, type: 'session' | 'folder', id: string): void => {
+  const onDragStart = (
+    e: React.DragEvent,
+    type: 'session' | 'folder',
+    id: string
+  ): void => {
+    e.stopPropagation()
+    activeDrag = { type, id }
+    e.dataTransfer.setData('text/plain', `${type}:${id}`)
     e.dataTransfer.setData('application/x-vexo-tree', JSON.stringify({ type, id }))
     e.dataTransfer.effectAllowed = 'move'
   }
 
-  const onDropOnFolder = async (
-    e: React.DragEvent,
-    folderId: string | null,
-    index: number
-  ): Promise<void> => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragOver(null)
-    const raw = e.dataTransfer.getData('application/x-vexo-tree')
-    if (!raw) return
+  const onDragEnd = (): void => {
+    activeDrag = null
+    setDragOverKey(null)
+  }
+
+  const parseDrag = (e: React.DragEvent): { type: 'session' | 'folder'; id: string } | null => {
+    if (activeDrag) return activeDrag
+    const raw =
+      e.dataTransfer.getData('application/x-vexo-tree') || e.dataTransfer.getData('text/plain')
+    if (!raw) return null
     try {
-      const { type, id } = JSON.parse(raw) as { type: 'session' | 'folder'; id: string }
-      if (type === 'folder' && folderId !== null) return
-      await window.api.sessions.reorder({
-        dragId: id,
-        dragType: type,
-        targetFolderId: type === 'folder' ? null : folderId,
-        targetIndex: index
-      })
-      await loadSessions()
+      if (raw.startsWith('{')) return JSON.parse(raw) as { type: 'session' | 'folder'; id: string }
+      const [type, id] = raw.split(':')
+      if ((type === 'session' || type === 'folder') && id) return { type, id }
     } catch {
       /* ignore */
     }
+    return null
+  }
+
+  const handleDrop = async (
+    e: React.DragEvent,
+    targetFolderId: string | null,
+    targetIndex: number
+  ): Promise<void> => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOverKey(null)
+    const drag = parseDrag(e)
+    activeDrag = null
+    if (!drag) return
+
+    if (drag.type === 'folder') {
+      // Folders only reorder among root folders
+      await window.api.sessions.reorder({
+        dragId: drag.id,
+        dragType: 'folder',
+        targetFolderId: null,
+        targetIndex
+      })
+      await loadSessions()
+      return
+    }
+
+    await window.api.sessions.reorder({
+      dragId: drag.id,
+      dragType: 'session',
+      targetFolderId,
+      targetIndex
+    })
+    await loadSessions()
+  }
+
+  const allowDrop = (e: React.DragEvent, key: string): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverKey(key)
   }
 
   const renderSession = (
@@ -166,14 +251,12 @@ export function SessionTree(): React.JSX.Element {
   ): React.JSX.Element => (
     <div
       key={session.id}
-      className="tree-item session"
+      className={`tree-item session ${dragOverKey === `s:${session.id}` ? 'drag-over' : ''}`}
       draggable
       onDragStart={(e) => onDragStart(e, 'session', session.id)}
-      onDragOver={(e) => {
-        e.preventDefault()
-        setDragOver(`s:${session.id}`)
-      }}
-      onDrop={(e) => void onDropOnFolder(e, folderId, index)}
+      onDragEnd={onDragEnd}
+      onDragOver={(e) => allowDrop(e, `s:${session.id}`)}
+      onDrop={(e) => void handleDrop(e, folderId, index)}
       onDoubleClick={() => tryConnect(session)}
       onContextMenu={(e) => {
         e.preventDefault()
@@ -193,16 +276,6 @@ export function SessionTree(): React.JSX.Element {
           {session.host}:{session.port}
         </span>
       </div>
-      <button
-        className="btn ghost sm"
-        disabled={connecting}
-        onClick={(e) => {
-          e.stopPropagation()
-          tryConnect(session)
-        }}
-      >
-        ▶
-      </button>
     </div>
   )
 
@@ -213,8 +286,6 @@ export function SessionTree(): React.JSX.Element {
         e.preventDefault()
         setMenu({ kind: 'blank', x: e.clientX, y: e.clientY })
       }}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => void onDropOnFolder(e, null, rootSessions.length)}
     >
       <div className="sidebar-toolbar">
         <input
@@ -229,20 +300,16 @@ export function SessionTree(): React.JSX.Element {
       <div className="tree-scroll">
         {sortedFolders.map((folder, fi) => {
           const kids = sessionsByFolder.get(folder.id) ?? []
+          const folderDropKey = `f:${folder.id}`
           return (
-            <div
-              key={folder.id}
-              className={`tree-folder ${dragOver === `f:${folder.id}` ? 'drag-over' : ''}`}
-              onDragOver={(e) => {
-                e.preventDefault()
-                setDragOver(`f:${folder.id}`)
-              }}
-              onDrop={(e) => void onDropOnFolder(e, folder.id, kids.length)}
-              onDragStart={(e) => onDragStart(e, 'folder', folder.id)}
-              draggable
-            >
+            <div key={folder.id} className="tree-folder">
               <div
-                className="tree-item folder"
+                className={`tree-item folder ${dragOverKey === folderDropKey ? 'drag-over' : ''}`}
+                draggable
+                onDragStart={(e) => onDragStart(e, 'folder', folder.id)}
+                onDragEnd={onDragEnd}
+                onDragOver={(e) => allowDrop(e, folderDropKey)}
+                onDrop={(e) => void handleDrop(e, folder.id, kids.length)}
                 onClick={() =>
                   void window.api.sessions
                     .setFolderCollapsed(folder.id, !folder.collapsed)
@@ -253,11 +320,6 @@ export function SessionTree(): React.JSX.Element {
                   e.stopPropagation()
                   setMenu({ kind: 'folder', x: e.clientX, y: e.clientY, folder })
                 }}
-                onDragOver={(e) => {
-                  e.preventDefault()
-                  setDragOver(`f:${folder.id}`)
-                }}
-                onDrop={(e) => void onDropOnFolder(e, folder.id, 0)}
               >
                 <span className="tree-icon">{folder.collapsed ? '▶' : '▼'}</span>
                 <span className="tree-icon">📂</span>
@@ -265,33 +327,32 @@ export function SessionTree(): React.JSX.Element {
                 <span className="muted count">{kids.length}</span>
               </div>
               {!folder.collapsed && (
-                <div className="tree-children">
+                <div
+                  className={`tree-children ${dragOverKey === `fc:${folder.id}` ? 'drag-over' : ''}`}
+                  onDragOver={(e) => allowDrop(e, `fc:${folder.id}`)}
+                  onDrop={(e) => void handleDrop(e, folder.id, kids.length)}
+                >
                   {kids.map((s, i) => renderSession(s, folder.id, i))}
-                  {kids.length === 0 && (
-                    <div
-                      className="drop-hint"
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => void onDropOnFolder(e, folder.id, 0)}
-                    >
-                      Drop sessions here
-                    </div>
-                  )}
                 </div>
               )}
               <div
                 className="folder-drop-line"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => void onDropOnFolder(e, null, fi)}
+                onDragOver={(e) => allowDrop(e, `fl:${folder.id}`)}
+                onDrop={(e) => void handleDrop(e, null, fi)}
               />
             </div>
           )
         })}
 
-        <div className="tree-root-sessions">
+        <div
+          className={`tree-root-sessions ${dragOverKey === 'root' ? 'drag-over' : ''}`}
+          onDragOver={(e) => allowDrop(e, 'root')}
+          onDrop={(e) => void handleDrop(e, null, rootSessions.length)}
+        >
           {rootSessions.map((s, i) => renderSession(s, null, i))}
         </div>
 
-        {filteredSessions.length === 0 && (
+        {filteredSessions.length === 0 && folders.length === 0 && (
           <div className="empty">Click + or right-click for New Session / New Folder</div>
         )}
       </div>
@@ -342,7 +403,7 @@ export function SessionTree(): React.JSX.Element {
 
       {editing && (
         <div className="modal-backdrop">
-          <div className="modal">
+          <div className="modal session-modal">
             <SessionForm
               initial={editing === 'new' ? null : editing}
               folders={folders}

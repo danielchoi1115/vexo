@@ -607,6 +607,53 @@ select:focus {
   overflow: auto;
 }
 
+.modal.session-modal {
+  width: min(760px, 96vw);
+  max-height: none;
+  overflow: visible;
+}
+
+.session-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  align-items: start;
+}
+
+.session-form > h3,
+.session-form > .banner,
+.session-form > .session-options,
+.session-form > .form-actions {
+  grid-column: 1 / -1;
+}
+
+.session-form label {
+  min-width: 0;
+}
+
+.session-form .path-row {
+  width: 100%;
+}
+
+.sidebar-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-item.drag-over,
+.tree-children.drag-over,
+.tree-root-sessions.drag-over {
+  outline: 1px dashed var(--focus);
+  background: color-mix(in srgb, var(--focus) 10%, transparent);
+}
+
+.tree-root-sessions {
+  min-height: 48px;
+  padding-bottom: 24px;
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -614,7 +661,6 @@ select:focus {
   margin-bottom: 8px;
 }
 
-.session-form,
 .settings-modal {
   display: flex;
   flex-direction: column;

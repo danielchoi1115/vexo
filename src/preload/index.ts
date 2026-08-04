@@ -37,7 +37,9 @@ const api: VexoApi = {
     deleteFolder: (id: string) => ipcRenderer.invoke('sessions:deleteFolder', id),
     setFolderCollapsed: (id: string, collapsed: boolean) =>
       ipcRenderer.invoke('sessions:setFolderCollapsed', id, collapsed),
-    reorder: (payload: TreeReorderPayload) => ipcRenderer.invoke('sessions:reorder', payload)
+    reorder: (payload: TreeReorderPayload) => ipcRenderer.invoke('sessions:reorder', payload),
+    export: () => ipcRenderer.invoke('sessions:export'),
+    import: (mode?: 'merge' | 'replace') => ipcRenderer.invoke('sessions:import', mode ?? 'merge')
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),

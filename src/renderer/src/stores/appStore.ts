@@ -36,6 +36,7 @@ interface AppState {
   disconnectSession: (activeId: string) => Promise<void>
   disconnectAll: () => Promise<void>
   disconnectOthers: (keepId: string) => Promise<void>
+  disconnectDisconnected: () => Promise<void>
   upsertActive: (info: ActiveSessionInfo) => void
   setRemoteCwd: (activeId: string, cwd: string) => void
   setMetrics: (m: RemoteMetrics) => void
@@ -121,26 +122,38 @@ export const useAppStore = create<AppState>((set, get) => ({
     }))
   },
 
+  disconnectDisconnected: async () => {
+    const ids = get()
+      .activeSessions.filter((a) => a.status === 'disconnected' || a.status === 'error')
+      .map((a) => a.id)
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          await window.api.ssh.disconnect(id)
+        } catch {
+          /* already gone */
+        }
+      })
+    )
+    set((s) => {
+      const activeSessions = s.activeSessions.filter(
+        (a) => a.status !== 'disconnected' && a.status !== 'error'
+      )
+      const focusedActiveId = activeSessions.some((a) => a.id === s.focusedActiveId)
+        ? s.focusedActiveId
+        : (activeSessions[activeSessions.length - 1]?.id ?? null)
+      return { activeSessions, focusedActiveId }
+    })
+  },
+
   upsertActive: (info) => {
     set((s) => {
       const idx = s.activeSessions.findIndex((a) => a.id === info.id)
-      let activeSessions = [...s.activeSessions]
+      const activeSessions = [...s.activeSessions]
       if (idx >= 0) activeSessions[idx] = { ...activeSessions[idx], ...info }
       else activeSessions.push(info)
-
-      if (info.status === 'disconnected' || info.status === 'error') {
-        // keep error tabs briefly only for disconnected remove
-        if (info.status === 'disconnected') {
-          activeSessions = activeSessions.filter((a) => a.id !== info.id)
-        }
-      }
-
-      const focusedActiveId =
-        s.focusedActiveId === info.id && info.status === 'disconnected'
-          ? (activeSessions[activeSessions.length - 1]?.id ?? null)
-          : s.focusedActiveId
-
-      return { activeSessions, focusedActiveId }
+      // Keep disconnected/error tabs so user can close them via menu
+      return { activeSessions }
     })
   },
 

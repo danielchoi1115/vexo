@@ -27,11 +27,7 @@ export function Sidebar(): React.JSX.Element {
       <div className="sidebar-header">
         <span className="brand">Vexo</span>
         <div className="sidebar-header-actions">
-          <button
-            className="btn icon"
-            title="New session"
-            onClick={() => requestNewSession()}
-          >
+          <button className="btn icon" title="New session" onClick={() => requestNewSession()}>
             +
           </button>
           <button className="btn ghost sm" title="Settings" onClick={() => setSettingsOpen(true)}>
@@ -60,15 +56,21 @@ export function Sidebar(): React.JSX.Element {
       </div>
 
       <div className="sidebar-body">
-        {sidebarTab === 'sessions' ? (
+        {/* Keep SessionTree mounted to avoid remount side-effects */}
+        <div
+          className="sidebar-panel"
+          style={{ display: sidebarTab === 'sessions' ? 'flex' : 'none' }}
+        >
           <SessionTree />
-        ) : focusedConnected && focusedActiveId ? (
-          <SftpBrowser activeSessionId={focusedActiveId} />
-        ) : (
-          <div className="sftp-browser empty-sftp">
-            <p className="muted">Connect a session to use SFTP.</p>
-          </div>
-        )}
+        </div>
+        {sidebarTab === 'sftp' &&
+          (focusedConnected && focusedActiveId ? (
+            <SftpBrowser activeSessionId={focusedActiveId} />
+          ) : (
+            <div className="sftp-browser empty-sftp">
+              <p className="muted">Connect a session to use SFTP.</p>
+            </div>
+          ))}
       </div>
     </aside>
   )

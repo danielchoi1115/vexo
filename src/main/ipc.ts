@@ -1,5 +1,6 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, nativeImage, app } from 'electron'
 import { join } from 'path'
+import { readFileSync, writeFileSync } from 'fs'
 import type { ConnectOptions, SessionInput, TreeReorderPayload, AppSettings } from '../shared/types'
 import * as sessionStore from './sessionStore'
 import * as settingsStore from './settingsStore'
@@ -35,6 +36,38 @@ export function registerIpc(ssh: SshManager, getWindow: () => BrowserWindow | nu
   })
   ipcMain.handle('sessions:reorder', (_e, payload: TreeReorderPayload) => {
     sessionStore.reorder(payload)
+  })
+
+  ipcMain.handle('sessions:export', async () => {
+    const win = getWindow()
+    const result = await dialog.showSaveDialog(win!, {
+      title: 'Export sessions',
+      defaultPath: join(app.getPath('documents'), 'vexo-sessions.json'),
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePath) return { ok: false as const }
+    const data = sessionStore.exportData()
+    writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf8')
+    return { ok: true as const, path: result.filePath }
+  })
+
+  ipcMain.handle('sessions:import', async (_e, mode: 'merge' | 'replace' = 'merge') => {
+    const win = getWindow()
+    const result = await dialog.showOpenDialog(win!, {
+      title: 'Import sessions',
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (result.canceled || !result.filePaths[0]) return { ok: false as const }
+    const raw = readFileSync(result.filePaths[0], 'utf8')
+    let parsed: sessionStore.SessionsExportFile
+    try {
+      parsed = JSON.parse(raw) as sessionStore.SessionsExportFile
+    } catch {
+      throw new Error('Invalid JSON file')
+    }
+    const stats = sessionStore.importData(parsed, mode)
+    return { ok: true as const, ...stats, path: result.filePaths[0] }
   })
 
   ipcMain.handle('settings:get', () => settingsStore.getSettings())
