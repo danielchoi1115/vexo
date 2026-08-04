@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useAppStore } from '../stores/appStore'
 import { SessionTree } from './SessionTree'
 import { SftpBrowser } from './SftpBrowser'
@@ -8,15 +9,35 @@ export function Sidebar(): React.JSX.Element {
   const focusedActiveId = useAppStore((s) => s.focusedActiveId)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const activeSessions = useAppStore((s) => s.activeSessions)
-  const hasConnected = activeSessions.some((a) => a.status === 'connected')
+  const requestNewSession = useAppStore((s) => s.requestNewSession)
+
+  const focusedConnected =
+    !!focusedActiveId &&
+    activeSessions.some((a) => a.id === focusedActiveId && a.status === 'connected')
+
+  // Leave SFTP when focused session is not connected
+  useEffect(() => {
+    if (sidebarTab === 'sftp' && !focusedConnected) {
+      setSidebarTab('sessions')
+    }
+  }, [sidebarTab, focusedConnected, setSidebarTab])
 
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
         <span className="brand">Vexo</span>
-        <button className="btn ghost sm" title="Settings" onClick={() => setSettingsOpen(true)}>
-          ⚙
-        </button>
+        <div className="sidebar-header-actions">
+          <button
+            className="btn icon"
+            title="New session"
+            onClick={() => requestNewSession()}
+          >
+            +
+          </button>
+          <button className="btn ghost sm" title="Settings" onClick={() => setSettingsOpen(true)}>
+            ⚙
+          </button>
+        </div>
       </div>
 
       <div className="sidebar-tabs">
@@ -28,9 +49,11 @@ export function Sidebar(): React.JSX.Element {
         </button>
         <button
           className={`sidebar-tab ${sidebarTab === 'sftp' ? 'active' : ''}`}
-          onClick={() => setSidebarTab('sftp')}
-          disabled={!hasConnected && !focusedActiveId}
-          title={!focusedActiveId ? 'Connect a session first' : 'SFTP browser'}
+          onClick={() => {
+            if (focusedConnected) setSidebarTab('sftp')
+          }}
+          disabled={!focusedConnected}
+          title={focusedConnected ? 'SFTP browser' : 'Connect a session first'}
         >
           SFTP
         </button>
@@ -39,8 +62,12 @@ export function Sidebar(): React.JSX.Element {
       <div className="sidebar-body">
         {sidebarTab === 'sessions' ? (
           <SessionTree />
-        ) : (
+        ) : focusedConnected && focusedActiveId ? (
           <SftpBrowser activeSessionId={focusedActiveId} />
+        ) : (
+          <div className="sftp-browser empty-sftp">
+            <p className="muted">Connect a session to use SFTP.</p>
+          </div>
         )}
       </div>
     </aside>

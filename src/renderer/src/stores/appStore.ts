@@ -22,6 +22,8 @@ interface AppState {
   remoteCwd: Record<string, string>
   metrics: Record<string, RemoteMetrics>
   settingsOpen: boolean
+  /** Signal SessionTree to open new-session form */
+  newSessionRequestId: number
 
   loadSessions: () => Promise<void>
   setSidebarTab: (tab: SidebarTab) => void
@@ -29,6 +31,7 @@ interface AppState {
   setError: (msg: string | null) => void
   setFollowTerminalFolder: (v: boolean) => void
   setSettingsOpen: (v: boolean) => void
+  requestNewSession: () => void
   connectSession: (sessionConfigId: string) => Promise<void>
   disconnectSession: (activeId: string) => Promise<void>
   disconnectAll: () => Promise<void>
@@ -52,6 +55,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   remoteCwd: {},
   metrics: {},
   settingsOpen: false,
+  newSessionRequestId: 0,
 
   loadSessions: async () => {
     const [sessions, folders] = await Promise.all([
@@ -66,6 +70,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setError: (msg) => set({ error: msg }),
   setFollowTerminalFolder: (v) => set({ followTerminalFolder: v }),
   setSettingsOpen: (v) => set({ settingsOpen: v }),
+  requestNewSession: () => {
+    set((s) => ({
+      sidebarTab: 'sessions',
+      newSessionRequestId: s.newSessionRequestId + 1
+    }))
+  },
 
   connectSession: async (sessionConfigId) => {
     set({ connecting: true, error: null })
@@ -145,9 +155,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateTransfer: (p) => {
     set((s) => {
       const others = s.transfers.filter((t) => t.transferId !== p.transferId)
-      if (p.done && !p.error) {
-        // keep completed briefly then drop on next update; for UX keep done for a moment
-        return { transfers: [...others, p] }
+      // Remove finished transfers immediately (including success)
+      if (p.done) {
+        return { transfers: others }
       }
       return { transfers: [...others, p] }
     })

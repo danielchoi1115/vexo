@@ -7,6 +7,16 @@ export type ColorSchemeId =
   | 'solarized-dark'
   | 'nord'
   | 'one-dark'
+  | 'tokyo-night'
+  | 'catppuccin-mocha'
+  | 'gruvbox-dark'
+  | 'ayu-dark'
+  | 'github-light'
+  | 'solarized-light'
+  | 'one-light'
+  | 'catppuccin-latte'
+  | 'gruvbox-light'
+  | 'paper'
 
 export interface SessionFolder {
   id: string
@@ -33,6 +43,12 @@ export interface SessionConfig {
   favorite?: boolean
   lastConnectedAt?: number
   hasCredential?: boolean
+  /** Default true */
+  x11Forwarding?: boolean
+  /** Default true */
+  compression?: boolean
+  /** Default true — send ^H (0x08) instead of DEL (0x7f) for Backspace */
+  backspaceSendsCtrlH?: boolean
 }
 
 export interface SessionInput {
@@ -49,6 +65,9 @@ export interface SessionInput {
   favorite?: boolean
   password?: string
   passphrase?: string
+  x11Forwarding?: boolean
+  compression?: boolean
+  backspaceSendsCtrlH?: boolean
 }
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
@@ -59,8 +78,8 @@ export interface ActiveSessionInfo {
   name: string
   status: ConnectionStatus
   error?: string
-  /** Remote cwd tracked via shell OSC / follow mode */
   remoteCwd?: string
+  backspaceSendsCtrlH?: boolean
 }
 
 export interface SftpEntry {
@@ -113,12 +132,9 @@ export interface RemoteMetrics {
 }
 
 export interface TreeReorderPayload {
-  /** session or folder id being moved */
   dragId: string
   dragType: 'session' | 'folder'
-  /** target folder id, or null for root */
   targetFolderId: string | null
-  /** index among siblings after move */
   targetIndex: number
 }
 
@@ -138,6 +154,7 @@ export interface VexoApi {
   settings: {
     get: () => Promise<AppSettings>
     set: (partial: Partial<AppSettings>) => Promise<AppSettings>
+    listFonts: () => Promise<string[]>
   }
   ssh: {
     connect: (options: ConnectOptions) => Promise<ActiveSessionInfo>
@@ -152,6 +169,7 @@ export interface VexoApi {
   }
   sftp: {
     list: (activeSessionId: string, remotePath: string) => Promise<SftpEntry[]>
+    home: (activeSessionId: string) => Promise<string>
     mkdir: (activeSessionId: string, remotePath: string) => Promise<void>
     rename: (activeSessionId: string, from: string, to: string) => Promise<void>
     remove: (activeSessionId: string, remotePath: string, isDir: boolean) => Promise<void>

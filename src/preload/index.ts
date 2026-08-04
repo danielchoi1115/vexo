@@ -41,7 +41,8 @@ const api: VexoApi = {
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
-    set: (partial: Partial<AppSettings>) => ipcRenderer.invoke('settings:set', partial)
+    set: (partial: Partial<AppSettings>) => ipcRenderer.invoke('settings:set', partial),
+    listFonts: () => ipcRenderer.invoke('settings:listFonts')
   },
   ssh: {
     connect: (options: ConnectOptions) => ipcRenderer.invoke('ssh:connect', options),
@@ -62,6 +63,7 @@ const api: VexoApi = {
   sftp: {
     list: (activeSessionId, remotePath) =>
       ipcRenderer.invoke('sftp:list', activeSessionId, remotePath),
+    home: (activeSessionId) => ipcRenderer.invoke('sftp:home', activeSessionId),
     mkdir: (activeSessionId, remotePath) =>
       ipcRenderer.invoke('sftp:mkdir', activeSessionId, remotePath),
     rename: (activeSessionId, from, to) =>

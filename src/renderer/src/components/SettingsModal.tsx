@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { COLOR_SCHEMES } from '../../../shared/themes'
 import type { ColorSchemeId } from '../../../shared/types'
 import { useSettingsStore } from '../stores/settingsStore'
@@ -6,9 +7,43 @@ interface Props {
   onClose: () => void
 }
 
+const PREFERRED_FONTS = [
+  'Consolas',
+  'Cascadia Code',
+  'Cascadia Mono',
+  'Courier New',
+  'Lucida Console',
+  'Segoe UI Mono',
+  'D2Coding',
+  'NanumGothicCoding',
+  'JetBrains Mono',
+  'Fira Code',
+  'Source Code Pro'
+]
+
 export function SettingsModal({ onClose }: Props): React.JSX.Element {
   const settings = useSettingsStore()
   const schemes = Object.values(COLOR_SCHEMES)
+  const [fonts, setFonts] = useState<string[]>(PREFERRED_FONTS)
+
+  useEffect(() => {
+    void window.api.settings.listFonts().then((list) => {
+      if (list.length === 0) return
+      // Prefer mono/coding fonts at top, then rest alphabetically
+      const preferred = PREFERRED_FONTS.filter((f) =>
+        list.some((x) => x.toLowerCase() === f.toLowerCase())
+      )
+      const preferredSet = new Set(preferred.map((f) => f.toLowerCase()))
+      const rest = list.filter((f) => !preferredSet.has(f.toLowerCase()))
+      setFonts([...preferred, ...rest])
+    })
+  }, [])
+
+  // Ensure current font is selectable even if list is still loading
+  const fontOptions =
+    settings.fontFamily && !fonts.includes(settings.fontFamily)
+      ? [settings.fontFamily, ...fonts]
+      : fonts
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
@@ -22,10 +57,17 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
 
         <label>
           Font family
-          <input
+          <select
             value={settings.fontFamily}
             onChange={(e) => void settings.update({ fontFamily: e.target.value })}
-          />
+            style={{ fontFamily: settings.fontFamily }}
+          >
+            {fontOptions.map((f) => (
+              <option key={f} value={f} style={{ fontFamily: f }}>
+                {f}
+              </option>
+            ))}
+          </select>
         </label>
 
         <label>
@@ -47,11 +89,26 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
               void settings.update({ colorScheme: e.target.value as ColorSchemeId })
             }
           >
-            {schemes.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
+            <optgroup label="Dark">
+              {schemes
+                .filter((s) => !s.id.includes('light') && s.id !== 'paper' && s.id !== 'catppuccin-latte')
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+            </optgroup>
+            <optgroup label="Light">
+              {schemes
+                .filter(
+                  (s) => s.id.includes('light') || s.id === 'paper' || s.id === 'catppuccin-latte'
+                )
+                .map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+            </optgroup>
           </select>
         </label>
 

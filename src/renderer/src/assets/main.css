@@ -77,6 +77,25 @@ select:focus {
   padding: 10px 12px 6px;
 }
 
+.sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.session-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+.prompt-modal input {
+  width: 100%;
+}
+
 .brand {
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -476,7 +495,7 @@ select:focus {
 /* Buttons */
 .btn {
   border: 1px solid var(--border);
-  background: #21262d;
+  background: color-mix(in srgb, var(--text) 8%, var(--bg-elevated));
   color: var(--text);
   border-radius: var(--radius);
   padding: 6px 12px;

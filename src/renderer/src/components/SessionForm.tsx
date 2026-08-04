@@ -14,7 +14,10 @@ const empty: SessionInput = {
   host: '',
   port: 22,
   username: '',
-  authMethod: 'password'
+  authMethod: 'password',
+  x11Forwarding: true,
+  compression: true,
+  backspaceSendsCtrlH: true
 }
 
 export function SessionForm({
@@ -35,7 +38,10 @@ export function SessionForm({
           authMethod: initial.authMethod,
           privateKeyPath: initial.privateKeyPath,
           folderId: initial.folderId ?? null,
-          color: initial.color
+          color: initial.color,
+          x11Forwarding: initial.x11Forwarding !== false,
+          compression: initial.compression !== false,
+          backspaceSendsCtrlH: initial.backspaceSendsCtrlH !== false
         }
       : { folderId: defaultFolderId ?? null })
   })
@@ -185,6 +191,33 @@ export function SessionForm({
           ))}
         </select>
       </label>
+
+      <div className="session-options">
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={form.x11Forwarding !== false}
+            onChange={(e) => set('x11Forwarding', e.target.checked)}
+          />
+          X11-Forwarding
+        </label>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={form.compression !== false}
+            onChange={(e) => set('compression', e.target.checked)}
+          />
+          Compression
+        </label>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={form.backspaceSendsCtrlH !== false}
+            onChange={(e) => set('backspaceSendsCtrlH', e.target.checked)}
+          />
+          Backspace sends ^H
+        </label>
+      </div>
 
       <div className="form-actions">
         <button type="button" className="btn ghost" onClick={onCancel}>

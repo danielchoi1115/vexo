@@ -30,8 +30,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   applyCssVars: () => {
-    const { theme, fontFamily, fontSize } = get()
+    const { theme, fontFamily, fontSize, colorScheme } = get()
     const root = document.documentElement
+    const light =
+      colorScheme.includes('light') ||
+      colorScheme === 'paper' ||
+      colorScheme === 'catppuccin-latte'
+    root.style.colorScheme = light ? 'light' : 'dark'
     root.style.setProperty('--bg', theme.uiBg)
     root.style.setProperty('--bg-elevated', theme.uiElevated)
     root.style.setProperty('--bg-sidebar', theme.uiSidebar)

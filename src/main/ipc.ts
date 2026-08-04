@@ -43,6 +43,30 @@ export function registerIpc(ssh: SshManager, getWindow: () => BrowserWindow | nu
     ssh.refreshMetricsPreference()
     return next
   })
+  ipcMain.handle('settings:listFonts', async () => {
+    try {
+      // font-list is CJS
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fontList = require('font-list') as {
+        getFonts: (opts?: { disableQuoting?: boolean }) => Promise<string[]>
+      }
+      const fonts = await fontList.getFonts({ disableQuoting: true })
+      const unique = [...new Set(fonts.map((f) => f.replace(/^"|"$/g, '').trim()))].filter(Boolean)
+      unique.sort((a, b) => a.localeCompare(b))
+      return unique
+    } catch {
+      return [
+        'Consolas',
+        'Cascadia Code',
+        'Cascadia Mono',
+        'Courier New',
+        'Lucida Console',
+        'MS Gothic',
+        'Segoe UI',
+        'Segoe UI Mono'
+      ]
+    }
+  })
 
   ipcMain.handle('ssh:connect', (_e, options: ConnectOptions) => ssh.connect(options))
   ipcMain.handle('ssh:disconnect', (_e, activeSessionId: string) => ssh.disconnect(activeSessionId))
@@ -57,6 +81,7 @@ export function registerIpc(ssh: SshManager, getWindow: () => BrowserWindow | nu
   ipcMain.handle('sftp:list', (_e, activeSessionId: string, remotePath: string) =>
     ssh.listDir(activeSessionId, remotePath)
   )
+  ipcMain.handle('sftp:home', (_e, activeSessionId: string) => ssh.homeDir(activeSessionId))
   ipcMain.handle('sftp:mkdir', (_e, activeSessionId: string, remotePath: string) =>
     ssh.mkdir(activeSessionId, remotePath)
   )

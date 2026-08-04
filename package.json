@@ -24,6 +24,7 @@
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "electron-store": "^8.2.0",
+    "font-list": "^2.1.0",
     "ssh2": "^1.17.0",
     "zustand": "^5.0.14"
   },

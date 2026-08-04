@@ -28,6 +28,18 @@ function migrate(): void {
       s.order = 0
       changed = true
     }
+    if (s.x11Forwarding === undefined) {
+      s.x11Forwarding = true
+      changed = true
+    }
+    if (s.compression === undefined) {
+      s.compression = true
+      changed = true
+    }
+    if (s.backspaceSendsCtrlH === undefined) {
+      s.backspaceSendsCtrlH = true
+      changed = true
+    }
     if (s.group && !s.folderId) {
       let folder = folders.find((f) => f.name === s.group)
       if (!folder) {
@@ -101,7 +113,10 @@ export function saveSession(input: SessionInput & { id?: string }): SessionConfi
     color: input.color,
     tags: input.tags,
     favorite: input.favorite ?? existing?.favorite ?? false,
-    lastConnectedAt: existing?.lastConnectedAt
+    lastConnectedAt: existing?.lastConnectedAt,
+    x11Forwarding: input.x11Forwarding ?? existing?.x11Forwarding ?? true,
+    compression: input.compression ?? existing?.compression ?? true,
+    backspaceSendsCtrlH: input.backspaceSendsCtrlH ?? existing?.backspaceSendsCtrlH ?? true
   }
 
   if (input.password) setSecret(id, input.password)

@@ -1,13 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { SessionConfig, SessionFolder } from '../../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { SessionForm } from './SessionForm'
+import { PromptDialog } from './PromptDialog'
 
 type Ctx =
   | { kind: 'blank'; x: number; y: number }
   | { kind: 'session'; x: number; y: number; session: SessionConfig }
   | { kind: 'folder'; x: number; y: number; folder: SessionFolder }
+
+type PromptState =
+  | { kind: 'new-folder' }
+  | { kind: 'rename-folder'; folder: SessionFolder }
+  | null
 
 export function SessionTree(): React.JSX.Element {
   const sessions = useAppStore((s) => s.sessions)
@@ -16,12 +22,21 @@ export function SessionTree(): React.JSX.Element {
   const connectSession = useAppStore((s) => s.connectSession)
   const connecting = useAppStore((s) => s.connecting)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
+  const newSessionRequestId = useAppStore((s) => s.newSessionRequestId)
 
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<SessionConfig | null | 'new'>(null)
   const [defaultFolderId, setDefaultFolderId] = useState<string | null>(null)
   const [menu, setMenu] = useState<Ctx | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
+  const [prompt, setPrompt] = useState<PromptState>(null)
+
+  useEffect(() => {
+    if (newSessionRequestId > 0) {
+      setDefaultFolderId(null)
+      setEditing('new')
+    }
+  }, [newSessionRequestId])
 
   const filteredSessions = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -35,10 +50,7 @@ export function SessionTree(): React.JSX.Element {
   }, [sessions, query])
 
   const rootSessions = useMemo(
-    () =>
-      filteredSessions
-        .filter((s) => !s.folderId)
-        .sort((a, b) => a.order - b.order),
+    () => filteredSessions.filter((s) => !s.folderId).sort((a, b) => a.order - b.order),
     [filteredSessions]
   )
 
@@ -67,16 +79,9 @@ export function SessionTree(): React.JSX.Element {
     setEditing('new')
   }
 
-  const openNewFolder = async (): Promise<void> => {
-    const name = prompt('Folder name', 'New folder')
-    if (!name) return
-    await window.api.sessions.createFolder(name)
-    await loadSessions()
-  }
-
   const blankMenu = (): MenuItem[] => [
     { label: 'New Session', onClick: () => openNewSession(null) },
-    { label: 'New Folder', onClick: () => void openNewFolder() },
+    { label: 'New Folder', onClick: () => setPrompt({ kind: 'new-folder' }) },
     { separator: true, label: '', onClick: () => {} },
     { label: 'Settings', onClick: () => setSettingsOpen(true) }
   ]
@@ -93,7 +98,7 @@ export function SessionTree(): React.JSX.Element {
       label: 'Delete',
       danger: true,
       onClick: () => {
-        if (confirm(`Delete session "${session.name}"?`)) {
+        if (window.confirm(`Delete session "${session.name}"?`)) {
           void window.api.sessions.delete(session.id).then(loadSessions)
         }
       }
@@ -111,16 +116,13 @@ export function SessionTree(): React.JSX.Element {
     },
     {
       label: 'Rename',
-      onClick: () => {
-        const name = prompt('Folder name', folder.name)
-        if (name) void window.api.sessions.renameFolder(folder.id, name).then(loadSessions)
-      }
+      onClick: () => setPrompt({ kind: 'rename-folder', folder })
     },
     {
       label: 'Delete folder',
       danger: true,
       onClick: () => {
-        if (confirm(`Delete folder "${folder.name}"? Sessions move to root.`)) {
+        if (window.confirm(`Delete folder "${folder.name}"? Sessions move to root.`)) {
           void window.api.sessions.deleteFolder(folder.id).then(loadSessions)
         }
       }
@@ -144,7 +146,7 @@ export function SessionTree(): React.JSX.Element {
     if (!raw) return
     try {
       const { type, id } = JSON.parse(raw) as { type: 'session' | 'folder'; id: string }
-      if (type === 'folder' && folderId !== null) return // folders stay at root level for MVP
+      if (type === 'folder' && folderId !== null) return
       await window.api.sessions.reorder({
         dragId: id,
         dragType: type,
@@ -157,7 +159,11 @@ export function SessionTree(): React.JSX.Element {
     }
   }
 
-  const renderSession = (session: SessionConfig, folderId: string | null, index: number): React.JSX.Element => (
+  const renderSession = (
+    session: SessionConfig,
+    folderId: string | null,
+    index: number
+  ): React.JSX.Element => (
     <div
       key={session.id}
       className="tree-item session"
@@ -272,7 +278,6 @@ export function SessionTree(): React.JSX.Element {
                   )}
                 </div>
               )}
-              {/* reorder folders among themselves */}
               <div
                 className="folder-drop-line"
                 onDragOver={(e) => e.preventDefault()}
@@ -287,7 +292,7 @@ export function SessionTree(): React.JSX.Element {
         </div>
 
         {filteredSessions.length === 0 && (
-          <div className="empty">Right-click for New Session / New Folder</div>
+          <div className="empty">Click + or right-click for New Session / New Folder</div>
         )}
       </div>
 
@@ -303,6 +308,35 @@ export function SessionTree(): React.JSX.Element {
                 : folderMenu(menu.folder)
           }
           onClose={() => setMenu(null)}
+        />
+      )}
+
+      {prompt?.kind === 'new-folder' && (
+        <PromptDialog
+          title="New folder"
+          label="Folder name"
+          defaultValue="New folder"
+          confirmLabel="Create"
+          onCancel={() => setPrompt(null)}
+          onSubmit={(name) => {
+            setPrompt(null)
+            void window.api.sessions.createFolder(name).then(loadSessions)
+          }}
+        />
+      )}
+
+      {prompt?.kind === 'rename-folder' && (
+        <PromptDialog
+          title="Rename folder"
+          label="Folder name"
+          defaultValue={prompt.folder.name}
+          confirmLabel="Rename"
+          onCancel={() => setPrompt(null)}
+          onSubmit={(name) => {
+            const id = prompt.folder.id
+            setPrompt(null)
+            void window.api.sessions.renameFolder(id, name).then(loadSessions)
+          }}
         />
       )}
 

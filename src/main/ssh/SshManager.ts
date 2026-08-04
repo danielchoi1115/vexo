@@ -78,6 +78,7 @@ interface LiveSession {
   sftp?: SFTPWrapper
   batcher: DataBatcher
   auth: AuthInput
+  backspaceSendsCtrlH: boolean
   /** Raw stream buffer for OSC 7 cwd parsing */
   oscBuf: string
   metricsTimer?: ReturnType<typeof setInterval>
@@ -127,16 +128,19 @@ export class SshManager {
       win.webContents.send('ssh:data', activeId, buf.toString('base64'))
     })
 
+    const backspaceSendsCtrlH = config.backspaceSendsCtrlH !== false
     const live: LiveSession = {
       info: {
         id: activeId,
         sessionConfigId: config.id,
         name: config.name,
-        status: 'connecting'
+        status: 'connecting',
+        backspaceSendsCtrlH
       },
       client,
       batcher,
       auth,
+      backspaceSendsCtrlH,
       oscBuf: ''
     }
     this.sessions.set(activeId, live)
@@ -164,12 +168,14 @@ export class SshManager {
       if (!username) throw new Error('Username is required')
     }
 
-    const connectConfig: ConnectConfig = {
+    const connectConfig: ConnectConfig & { compress?: boolean } = {
       host: config.host,
       port: config.port,
       username,
       readyTimeout: 30000,
       tryKeyboard: true,
+      compress: config.compression !== false,
+      ...(config.x11Forwarding !== false ? { x11: true } : {}),
       ...(config.authMethod === 'agent'
         ? {
             agent:
@@ -322,7 +328,12 @@ export class SshManager {
       live.auth.feed(data, (s) => this.termWrite(live, s))
       return
     }
-    live.stream?.write(data)
+    let payload = data
+    if (live.backspaceSendsCtrlH) {
+      // Map DEL (0x7f) → BS (^H, 0x08) for hosts that expect it
+      payload = payload.replace(/\x7f/g, '\x08')
+    }
+    live.stream?.write(payload)
   }
 
   resize(activeSessionId: string, cols: number, rows: number): void {
@@ -365,6 +376,21 @@ export class SshManager {
   private ensureSftp(live: LiveSession): SFTPWrapper {
     if (!live.sftp) throw new Error('SFTP not available on this session')
     return live.sftp
+  }
+
+  async homeDir(activeSessionId: string): Promise<string> {
+    const live = this.getLive(activeSessionId)
+    const sftp = this.ensureSftp(live)
+    return new Promise((resolve) => {
+      // SFTP realpath of '.' is usually the login home directory
+      sftp.realpath('.', (err, p) => {
+        if (err || !p) {
+          resolve('/')
+          return
+        }
+        resolve(p)
+      })
+    })
   }
 
   async listDir(activeSessionId: string, remotePath: string): Promise<SftpEntry[]> {

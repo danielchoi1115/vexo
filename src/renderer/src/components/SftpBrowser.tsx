@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { SftpEntry, TransferProgress } from '../../../shared/types'
 import { useAppStore } from '../stores/appStore'
 import { ContextMenu, type MenuItem } from './ContextMenu'
+import { PromptDialog } from './PromptDialog'
 
 interface Props {
   activeSessionId: string | null
@@ -35,6 +36,11 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
   const [selected, setSelected] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; entry: SftpEntry | null } | null>(null)
   const [droppedHere, setDroppedHere] = useState(false)
+  const [prompt, setPrompt] = useState<
+    | { kind: 'rename'; entry: SftpEntry }
+    | { kind: 'chmod'; entry: SftpEntry }
+    | null
+  >(null)
 
   const follow = useAppStore((s) => s.followTerminalFolder)
   const setFollow = useAppStore((s) => s.setFollowTerminalFolder)
@@ -62,11 +68,20 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
   )
 
   useEffect(() => {
-    if (activeSessionId) void refresh('/')
-    else {
+    if (!activeSessionId) {
       setEntries([])
       setPath('/')
+      return
     }
+    // Open at remote home directory
+    void (async () => {
+      try {
+        const home = await window.api.sftp.home(activeSessionId)
+        await refresh(home || '/')
+      } catch {
+        await refresh('/')
+      }
+    })()
   }, [activeSessionId, refresh])
 
   // Follow terminal folder
@@ -79,12 +94,8 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
   useEffect(() => {
     return window.api.sftp.onProgress((p: TransferProgress) => {
       updateTransfer(p)
-      if (p.done && !p.error && activeSessionId === p.activeSessionId) {
-        if (p.direction === 'upload') void refresh(path)
-        // auto-clear done transfers after short delay
-        setTimeout(() => {
-          updateTransfer({ ...p, done: true })
-        }, 2000)
+      if (p.done && !p.error && activeSessionId === p.activeSessionId && p.direction === 'upload') {
+        void refresh(path)
       }
     })
   }, [activeSessionId, path, refresh, updateTransfer])
@@ -107,10 +118,8 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
     }
   }
 
-  const rename = async (entry: SftpEntry): Promise<void> => {
-    if (!activeSessionId) return
-    const name = prompt('Rename to:', entry.name)
-    if (!name || name === entry.name) return
+  const doRename = async (entry: SftpEntry, name: string): Promise<void> => {
+    if (!activeSessionId || !name || name === entry.name) return
     const to = `${parentPath(entry.path).replace(/\/$/, '')}/${name}`.replace(/\/+/g, '/')
     try {
       await window.api.sftp.rename(activeSessionId, entry.path, to)
@@ -122,7 +131,7 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
 
   const remove = async (entry: SftpEntry): Promise<void> => {
     if (!activeSessionId) return
-    if (!confirm(`Delete ${entry.name}?`)) return
+    if (!window.confirm(`Delete ${entry.name}?`)) return
     try {
       await window.api.sftp.remove(activeSessionId, entry.path, entry.type === 'directory')
       await refresh(path)
@@ -131,10 +140,8 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
     }
   }
 
-  const permissions = async (entry: SftpEntry): Promise<void> => {
-    if (!activeSessionId) return
-    const mode = prompt('Permissions (octal)', modeString(entry.mode))
-    if (!mode) return
+  const doChmod = async (entry: SftpEntry, mode: string): Promise<void> => {
+    if (!activeSessionId || !mode) return
     try {
       await window.api.sftp.chmod(activeSessionId, entry.path, mode)
       await refresh(path)
@@ -144,7 +151,7 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
   }
 
   const properties = (entry: SftpEntry): void => {
-    alert(
+    window.alert(
       [
         `Name: ${entry.name}`,
         `Path: ${entry.path}`,
@@ -214,14 +221,14 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
       disabled: entry.type === 'directory'
     },
     { label: 'Delete', onClick: () => void remove(entry), danger: true },
-    { label: 'Rename', onClick: () => void rename(entry) },
+    { label: 'Rename', onClick: () => setPrompt({ kind: 'rename', entry }) },
     {
       label: 'Copy file path',
       onClick: () => void window.api.clipboard.writeText(entry.path)
     },
     { separator: true, label: '', onClick: () => {} },
     { label: 'Properties', onClick: () => properties(entry) },
-    { label: 'Permissions', onClick: () => void permissions(entry) }
+    { label: 'Permissions', onClick: () => setPrompt({ kind: 'chmod', entry }) }
   ]
 
   const sessionTransfers = activeSessionId
@@ -331,6 +338,35 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
           y={menu.y}
           items={menuItems(menu.entry)}
           onClose={() => setMenu(null)}
+        />
+      )}
+
+      {prompt?.kind === 'rename' && (
+        <PromptDialog
+          title="Rename"
+          defaultValue={prompt.entry.name}
+          confirmLabel="Rename"
+          onCancel={() => setPrompt(null)}
+          onSubmit={(name) => {
+            const entry = prompt.entry
+            setPrompt(null)
+            void doRename(entry, name)
+          }}
+        />
+      )}
+
+      {prompt?.kind === 'chmod' && (
+        <PromptDialog
+          title="Permissions"
+          label="Octal mode (e.g. 755)"
+          defaultValue={modeString(prompt.entry.mode)}
+          confirmLabel="Apply"
+          onCancel={() => setPrompt(null)}
+          onSubmit={(mode) => {
+            const entry = prompt.entry
+            setPrompt(null)
+            void doChmod(entry, mode)
+          }}
         />
       )}
     </div>
