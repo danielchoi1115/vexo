@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react'
-import type { AuthMethod, SessionConfig, SessionFolder, SessionInput } from '../../../shared/types'
+import type { AuthMethod, SessionConfig, SessionInput } from '../../../shared/types'
 
 interface Props {
   initial?: SessionConfig | null
-  folders: SessionFolder[]
+  /** Target folder for new sessions (from sidebar selection) */
   defaultFolderId?: string | null
   onSaved: () => void
   onCancel: () => void
@@ -22,7 +22,6 @@ const empty: SessionInput = {
 
 export function SessionForm({
   initial,
-  folders,
   defaultFolderId,
   onSaved,
   onCancel
@@ -68,6 +67,7 @@ export function SessionForm({
         ...form,
         id: initial?.id,
         username: form.username || '',
+        folderId: initial ? form.folderId : (defaultFolderId ?? null),
         password: password || undefined,
         passphrase: passphrase || undefined
       })
@@ -114,7 +114,7 @@ export function SessionForm({
         />
       </label>
       <label>
-        Username <span className="optional">(optional — prompt in terminal)</span>
+        Username <span className="optional">(optional)</span>
         <input
           value={form.username ?? ''}
           onChange={(e) => set('username', e.target.value)}
@@ -135,12 +135,7 @@ export function SessionForm({
 
       {form.authMethod === 'password' && (
         <label>
-          Password{' '}
-          <span className="optional">
-            {initial?.hasCredential
-              ? '(stored — leave blank to keep)'
-              : '(optional — prompt in terminal)'}
-          </span>
+          Password <span className="optional">(optional)</span>
           <input
             type="password"
             value={password}
@@ -152,7 +147,7 @@ export function SessionForm({
 
       {form.authMethod === 'privateKey' && (
         <>
-          <label>
+          <label className="span-2">
             Private key path
             <div className="path-row">
               <input
@@ -160,7 +155,7 @@ export function SessionForm({
                 onChange={(e) => set('privateKeyPath', e.target.value)}
                 placeholder="Select key file…"
               />
-              <button type="button" className="btn sm" onClick={() => void browseKey()}>
+              <button type="button" className="btn sm control-btn" onClick={() => void browseKey()}>
                 Browse…
               </button>
             </div>
@@ -176,21 +171,6 @@ export function SessionForm({
           </label>
         </>
       )}
-
-      <label>
-        Folder
-        <select
-          value={form.folderId ?? ''}
-          onChange={(e) => set('folderId', e.target.value || null)}
-        >
-          <option value="">(root)</option>
-          {folders.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
-      </label>
 
       <div className="session-options">
         <label className="check-row">
@@ -220,11 +200,11 @@ export function SessionForm({
       </div>
 
       <div className="form-actions">
-        <button type="button" className="btn ghost" onClick={onCancel}>
+        <button type="button" className="btn" onClick={onCancel}>
           Cancel
         </button>
         <button type="submit" className="btn primary" disabled={saving}>
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? 'Saving…' : 'OK'}
         </button>
       </div>
     </form>

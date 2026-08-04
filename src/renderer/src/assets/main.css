@@ -512,8 +512,8 @@ select:focus {
 }
 
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--focus);
+  border-color: var(--focus);
   color: #fff;
 }
 
@@ -623,7 +623,8 @@ select:focus {
 .session-form > h3,
 .session-form > .banner,
 .session-form > .session-options,
-.session-form > .form-actions {
+.session-form > .form-actions,
+.session-form > .span-2 {
   grid-column: 1 / -1;
 }
 
@@ -631,8 +632,34 @@ select:focus {
   min-width: 0;
 }
 
+.session-form input,
+.session-form select {
+  height: 34px;
+  line-height: 1.2;
+  padding: 0 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .session-form .path-row {
   width: 100%;
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.session-form .path-row input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+}
+
+.session-form .path-row .control-btn {
+  height: 34px;
+  padding: 0 12px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
 }
 
 .sidebar-panel {
@@ -664,7 +691,176 @@ select:focus {
 .settings-modal {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
+  width: min(720px, 96vw);
+  max-height: min(80vh, 640px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.settings-modal .modal-header {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  margin: 0;
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  min-height: 360px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+}
+
+.settings-nav-item {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--muted);
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.settings-nav-item:hover {
+  background: color-mix(in srgb, var(--focus) 12%, transparent);
+  color: var(--text);
+}
+
+.settings-nav-item.active {
+  background: color-mix(in srgb, var(--focus) 20%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.settings-content {
+  padding: 16px 18px;
+  overflow: auto;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-section-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.settings-section-desc {
+  margin: -6px 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-control {
+  height: 36px;
+  font-size: 14px;
+  padding: 0 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-control[type='range'] {
+  height: auto;
+  padding: 8px 0;
+}
+
+.settings-check {
+  align-items: flex-start !important;
+  gap: 10px !important;
+  padding: 8px 0;
+}
+
+.settings-check strong {
+  display: block;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.settings-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.settings-actions {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  margin: 0;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.tree-item.folder.selected {
+  background: color-mix(in srgb, var(--focus) 18%, transparent);
+  border-left-color: var(--focus);
+}
+
+.tree-chevron {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 2px;
+  width: 1.4em;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.tree-chevron:hover {
+  color: var(--text);
+}
+
+.selection-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 6px;
+  font-size: 11px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--focus) 10%, transparent);
+  border-radius: 4px;
+}
+
+.scheme-preview {
+  gap: 8px;
+}
+
+.scheme-swatch {
+  width: 64px;
+  height: 40px;
+  font-size: 13px;
 }
 
 .session-form h3,

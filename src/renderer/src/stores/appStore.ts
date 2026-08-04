@@ -22,6 +22,8 @@ interface AppState {
   remoteCwd: Record<string, string>
   metrics: Record<string, RemoteMetrics>
   settingsOpen: boolean
+  /** Selected folder in session tree (null = root) */
+  selectedFolderId: string | null
   /** Signal SessionTree to open new-session form */
   newSessionRequestId: number
 
@@ -31,6 +33,7 @@ interface AppState {
   setError: (msg: string | null) => void
   setFollowTerminalFolder: (v: boolean) => void
   setSettingsOpen: (v: boolean) => void
+  setSelectedFolderId: (id: string | null) => void
   requestNewSession: () => void
   connectSession: (sessionConfigId: string) => Promise<void>
   disconnectSession: (activeId: string) => Promise<void>
@@ -56,6 +59,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   remoteCwd: {},
   metrics: {},
   settingsOpen: false,
+  selectedFolderId: null,
   newSessionRequestId: 0,
 
   loadSessions: async () => {
@@ -63,7 +67,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       window.api.sessions.list(),
       window.api.sessions.listFolders()
     ])
-    set({ sessions, folders })
+    set((s) => {
+      // Clear selection if folder was deleted
+      const selectedFolderId =
+        s.selectedFolderId && folders.some((f) => f.id === s.selectedFolderId)
+          ? s.selectedFolderId
+          : null
+      return { sessions, folders, selectedFolderId }
+    })
   },
 
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
@@ -71,6 +82,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setError: (msg) => set({ error: msg }),
   setFollowTerminalFolder: (v) => set({ followTerminalFolder: v }),
   setSettingsOpen: (v) => set({ settingsOpen: v }),
+  setSelectedFolderId: (id) => set({ selectedFolderId: id }),
   requestNewSession: () => {
     set((s) => ({
       sidebarTab: 'sessions',

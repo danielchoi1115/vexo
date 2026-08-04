@@ -18,6 +18,13 @@ type PromptState =
 /** Module-level drag payload — Chromium sometimes drops custom mime types on drop */
 let activeDrag: { type: 'session' | 'folder'; id: string } | null = null
 
+function nextDuplicateName(baseName: string, existingNames: string[]): string {
+  const set = new Set(existingNames)
+  let i = 1
+  while (set.has(`${baseName} (${i})`)) i++
+  return `${baseName} (${i})`
+}
+
 export function SessionTree(): React.JSX.Element {
   const sessions = useAppStore((s) => s.sessions)
   const folders = useAppStore((s) => s.folders)
@@ -25,6 +32,8 @@ export function SessionTree(): React.JSX.Element {
   const connectSession = useAppStore((s) => s.connectSession)
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const newSessionRequestId = useAppStore((s) => s.newSessionRequestId)
+  const selectedFolderId = useAppStore((s) => s.selectedFolderId)
+  const setSelectedFolderId = useAppStore((s) => s.setSelectedFolderId)
 
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState<SessionConfig | null | 'new'>(null)
@@ -34,11 +43,11 @@ export function SessionTree(): React.JSX.Element {
   const [prompt, setPrompt] = useState<PromptState>(null)
   const lastNewSessionReq = useRef(0)
 
-  // Only open New Session when + actually increments the request id (not on remount)
+  // Only open New Session when + increments the request id (uses selected folder)
   useEffect(() => {
     if (newSessionRequestId > 0 && newSessionRequestId !== lastNewSessionReq.current) {
       lastNewSessionReq.current = newSessionRequestId
-      setDefaultFolderId(null)
+      setDefaultFolderId(useAppStore.getState().selectedFolderId)
       setEditing('new')
     }
   }, [newSessionRequestId])
@@ -84,8 +93,34 @@ export function SessionTree(): React.JSX.Element {
     setEditing('new')
   }
 
+  const duplicateSession = async (session: SessionConfig): Promise<void> => {
+    const name = nextDuplicateName(
+      session.name,
+      sessions.map((s) => s.name)
+    )
+    await window.api.sessions.save({
+      name,
+      host: session.host,
+      port: session.port,
+      username: session.username,
+      authMethod: session.authMethod,
+      privateKeyPath: session.privateKeyPath,
+      folderId: session.folderId ?? null,
+      color: session.color,
+      tags: session.tags,
+      favorite: false,
+      x11Forwarding: session.x11Forwarding !== false,
+      compression: session.compression !== false,
+      backspaceSendsCtrlH: session.backspaceSendsCtrlH !== false
+    })
+    await loadSessions()
+  }
+
   const blankMenu = (): MenuItem[] => [
-    { label: 'New Session', onClick: () => openNewSession(null) },
+    {
+      label: 'New Session',
+      onClick: () => openNewSession(selectedFolderId)
+    },
     { label: 'New Folder', onClick: () => setPrompt({ kind: 'new-folder' }) },
     { separator: true, label: '', onClick: () => {} },
     {
@@ -133,6 +168,10 @@ export function SessionTree(): React.JSX.Element {
     { label: 'Connect', onClick: () => tryConnect(session) },
     { label: 'Edit', onClick: () => setEditing(session) },
     {
+      label: 'Duplicate',
+      onClick: () => void duplicateSession(session)
+    },
+    {
       label: session.favorite ? 'Unfavorite' : 'Favorite',
       onClick: () =>
         void window.api.sessions.setFavorite(session.id, !session.favorite).then(loadSessions)
@@ -149,6 +188,10 @@ export function SessionTree(): React.JSX.Element {
   ]
 
   const folderMenu = (folder: SessionFolder): MenuItem[] => [
+    {
+      label: 'Select folder',
+      onClick: () => setSelectedFolderId(folder.id)
+    },
     { label: 'New Session here', onClick: () => openNewSession(folder.id) },
     {
       label: folder.collapsed ? 'Expand' : 'Collapse',
@@ -217,7 +260,6 @@ export function SessionTree(): React.JSX.Element {
     if (!drag) return
 
     if (drag.type === 'folder') {
-      // Folders only reorder among root folders
       await window.api.sessions.reorder({
         dragId: drag.id,
         dragType: 'folder',
@@ -257,6 +299,7 @@ export function SessionTree(): React.JSX.Element {
       onDragEnd={onDragEnd}
       onDragOver={(e) => allowDrop(e, `s:${session.id}`)}
       onDrop={(e) => void handleDrop(e, folderId, index)}
+      onClick={() => setSelectedFolderId(folderId)}
       onDoubleClick={() => tryConnect(session)}
       onContextMenu={(e) => {
         e.preventDefault()
@@ -286,6 +329,10 @@ export function SessionTree(): React.JSX.Element {
         e.preventDefault()
         setMenu({ kind: 'blank', x: e.clientX, y: e.clientY })
       }}
+      onClick={(e) => {
+        // Click empty background → root selection
+        if (e.target === e.currentTarget) setSelectedFolderId(null)
+      }}
     >
       <div className="sidebar-toolbar">
         <input
@@ -295,33 +342,63 @@ export function SessionTree(): React.JSX.Element {
           onChange={(e) => setQuery(e.target.value)}
           onClick={(e) => e.stopPropagation()}
         />
+        {selectedFolderId && (
+          <div className="selection-hint">
+            Folder selected — + creates here
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => setSelectedFolderId(null)}
+            >
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="tree-scroll">
+      <div
+        className="tree-scroll"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setSelectedFolderId(null)
+        }}
+      >
         {sortedFolders.map((folder, fi) => {
           const kids = sessionsByFolder.get(folder.id) ?? []
           const folderDropKey = `f:${folder.id}`
+          const selected = selectedFolderId === folder.id
           return (
             <div key={folder.id} className="tree-folder">
               <div
-                className={`tree-item folder ${dragOverKey === folderDropKey ? 'drag-over' : ''}`}
+                className={`tree-item folder ${selected ? 'selected' : ''} ${dragOverKey === folderDropKey ? 'drag-over' : ''}`}
                 draggable
                 onDragStart={(e) => onDragStart(e, 'folder', folder.id)}
                 onDragEnd={onDragEnd}
                 onDragOver={(e) => allowDrop(e, folderDropKey)}
                 onDrop={(e) => void handleDrop(e, folder.id, kids.length)}
-                onClick={() =>
-                  void window.api.sessions
-                    .setFolderCollapsed(folder.id, !folder.collapsed)
-                    .then(loadSessions)
-                }
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSelectedFolderId(folder.id)
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
+                  setSelectedFolderId(folder.id)
                   setMenu({ kind: 'folder', x: e.clientX, y: e.clientY, folder })
                 }}
               >
-                <span className="tree-icon">{folder.collapsed ? '▶' : '▼'}</span>
+                <button
+                  type="button"
+                  className="tree-chevron"
+                  title={folder.collapsed ? 'Expand' : 'Collapse'}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void window.api.sessions
+                      .setFolderCollapsed(folder.id, !folder.collapsed)
+                      .then(loadSessions)
+                  }}
+                >
+                  {folder.collapsed ? '▶' : '▼'}
+                </button>
                 <span className="tree-icon">📂</span>
                 <span className="folder-name">{folder.name}</span>
                 <span className="muted count">{kids.length}</span>
@@ -345,9 +422,10 @@ export function SessionTree(): React.JSX.Element {
         })}
 
         <div
-          className={`tree-root-sessions ${dragOverKey === 'root' ? 'drag-over' : ''}`}
+          className={`tree-root-sessions ${!selectedFolderId ? 'root-selected' : ''} ${dragOverKey === 'root' ? 'drag-over' : ''}`}
           onDragOver={(e) => allowDrop(e, 'root')}
           onDrop={(e) => void handleDrop(e, null, rootSessions.length)}
+          onClick={() => setSelectedFolderId(null)}
         >
           {rootSessions.map((s, i) => renderSession(s, null, i))}
         </div>
@@ -406,7 +484,6 @@ export function SessionTree(): React.JSX.Element {
           <div className="modal session-modal">
             <SessionForm
               initial={editing === 'new' ? null : editing}
-              folders={folders}
               defaultFolderId={defaultFolderId}
               onCancel={() => setEditing(null)}
               onSaved={() => {
