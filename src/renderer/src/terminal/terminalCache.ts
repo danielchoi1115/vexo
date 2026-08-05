@@ -9,17 +9,18 @@ export interface CachedTerminal {
   sessionId: string
   term: Terminal
   fit: FitAddon
-  /** Detached wrapper moved between React hosts without disposing xterm */
   hostEl: HTMLDivElement
-  /** Whether this terminal currently has focus (fit/focus only — data always writes) */
   focused: boolean
   dispose: () => void
 }
 
 const cache = new Map<string, CachedTerminal>()
+/** SSH data that arrived before the terminal instance existed */
+const earlyBuffer = new Map<string, string[]>()
 
-/** Off-screen park so React unmount never destroys xterm DOM */
 let park: HTMLDivElement | null = null
+let globalDataHooked = false
+
 function getPark(): HTMLDivElement {
   if (!park) {
     park = document.createElement('div')
@@ -30,6 +31,13 @@ function getPark(): HTMLDivElement {
     document.body.appendChild(park)
   }
   return park
+}
+
+function decodeB64(b64: string): string {
+  const text = atob(b64)
+  const bytes = new Uint8Array(text.length)
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
+  return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
 }
 
 function toXtermTheme(t: TerminalTheme): ITheme {
@@ -57,11 +65,25 @@ function toXtermTheme(t: TerminalTheme): ITheme {
   }
 }
 
-function decodeB64(b64: string): string {
-  const text = atob(b64)
-  const bytes = new Uint8Array(text.length)
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
-  return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+/** Call once at app start so no SSH bytes are lost before TerminalView mounts */
+export function initTerminalDataRouter(): void {
+  if (globalDataHooked) return
+  if (typeof window === 'undefined' || !window.api?.ssh?.onData) return
+  globalDataHooked = true
+
+  window.api.ssh.onData((id, b64) => {
+    const text = decodeB64(b64)
+    const entry = cache.get(id)
+    if (entry) {
+      entry.term.write(text)
+      return
+    }
+    const buf = earlyBuffer.get(id) ?? []
+    buf.push(text)
+    // Cap early buffer (~keep last chunks)
+    if (buf.length > 400) buf.splice(0, buf.length - 200)
+    earlyBuffer.set(id, buf)
+  })
 }
 
 function fitAndResize(entry: CachedTerminal): void {
@@ -73,11 +95,8 @@ function fitAndResize(entry: CachedTerminal): void {
   }
 }
 
-/**
- * Get or create a long-lived terminal for a session.
- * Survives React remounts (split layout) so scrollback is preserved.
- */
 export function acquireTerminal(sessionId: string): CachedTerminal {
+  initTerminalDataRouter()
   const existing = cache.get(sessionId)
   if (existing) return existing
 
@@ -86,8 +105,6 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
   hostEl.className = 'terminal-host terminal-host-cached'
   hostEl.dataset.sessionId = sessionId
   hostEl.style.cssText = 'width:100%;height:100%;min-height:0;flex:1;'
-
-  // Park first so open() has a real document parent (helps some renderers)
   getPark().appendChild(hostEl)
 
   const term = new Terminal({
@@ -114,13 +131,12 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     /* canvas fallback */
   }
 
-  // Always write SSH data — never drop login prompts while React is mounting
-  const unsubData = window.api.ssh.onData((id, b64) => {
-    if (id !== sessionId) return
-    const entry = cache.get(sessionId)
-    if (!entry) return
-    entry.term.write(decodeB64(b64))
-  })
+  // Flush anything that arrived before this terminal existed
+  const early = earlyBuffer.get(sessionId)
+  if (early?.length) {
+    for (const chunk of early) term.write(chunk)
+    earlyBuffer.delete(sessionId)
+  }
 
   const dataDisp = term.onData((data) => {
     void window.api.ssh.write(sessionId, data)
@@ -138,9 +154,7 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     const mod = ev.ctrlKey || ev.metaKey
     if (!mod) return true
 
-    if (useSettingsStore.getState().copyOnSelect) {
-      return true
-    }
+    if (useSettingsStore.getState().copyOnSelect) return true
 
     if (ev.key === 'c' || ev.key === 'C') {
       if (term.hasSelection()) {
@@ -154,10 +168,7 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
       return true
     }
 
-    if (ev.key === 'v' || ev.key === 'V') {
-      return false
-    }
-
+    if (ev.key === 'v' || ev.key === 'V') return false
     return true
   })
 
@@ -175,8 +186,9 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     e.preventDefault()
     const delta = e.deltaY > 0 ? -1 : 1
     const cur = useSettingsStore.getState().terminalFontSize || 14
-    const next = Math.min(28, Math.max(10, cur + delta))
-    void useSettingsStore.getState().update({ terminalFontSize: next })
+    void useSettingsStore.getState().update({
+      terminalFontSize: Math.min(28, Math.max(10, cur + delta))
+    })
   }
   hostEl.addEventListener('wheel', onWheel, { passive: false })
 
@@ -190,7 +202,6 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
   hostEl.addEventListener('contextmenu', onContext)
 
   const dispose = (): void => {
-    unsubData()
     dataDisp.dispose()
     selDisp.dispose()
     hostEl.removeEventListener('paste', onPaste)
@@ -198,6 +209,7 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     hostEl.removeEventListener('contextmenu', onContext)
     term.dispose()
     hostEl.remove()
+    earlyBuffer.delete(sessionId)
     cache.delete(sessionId)
   }
 
@@ -213,23 +225,13 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
   return entry
 }
 
-/** Attach (or re-attach) terminal host into a React container */
 export function attachTerminal(sessionId: string, container: HTMLElement, focused: boolean): void {
   const entry = acquireTerminal(sessionId)
-  // Reset park styles when reattaching to visible UI
-  entry.hostEl.style.position = ''
-  entry.hostEl.style.left = ''
-  entry.hostEl.style.top = ''
-  entry.hostEl.style.width = '100%'
-  entry.hostEl.style.height = '100%'
-  entry.hostEl.style.opacity = ''
-  entry.hostEl.style.pointerEvents = ''
-
+  entry.hostEl.style.cssText = 'width:100%;height:100%;min-height:0;flex:1;'
   if (entry.hostEl.parentElement !== container) {
     container.appendChild(entry.hostEl)
   }
   entry.focused = focused
-  // Double rAF: wait for layout after append
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       fitAndResize(entry)
@@ -244,7 +246,6 @@ export function attachTerminal(sessionId: string, container: HTMLElement, focuse
   })
 }
 
-/** Park terminal off-screen without destroying it (React unmount / split) */
 export function parkTerminal(sessionId: string): void {
   const entry = cache.get(sessionId)
   if (!entry) return
@@ -278,8 +279,28 @@ export function applyTerminalSettings(sessionId: string): void {
 
 export function disposeTerminal(sessionId: string): void {
   cache.get(sessionId)?.dispose()
+  earlyBuffer.delete(sessionId)
 }
 
 export function disposeAllTerminals(): void {
   for (const id of [...cache.keys()]) disposeTerminal(id)
+  earlyBuffer.clear()
+}
+
+/**
+ * Create terminal as soon as a session id is known (before React paints),
+ * so "Connecting…" / login prompts are never missed.
+ */
+export function preloadTerminal(sessionId: string): void {
+  initTerminalDataRouter()
+  acquireTerminal(sessionId)
+}
+
+function fitAndResize(entry: CachedTerminal): void {
+  try {
+    entry.fit.fit()
+    void window.api.ssh.resize(entry.sessionId, entry.term.cols, entry.term.rows)
+  } catch {
+    /* not measurable yet */
+  }
 }

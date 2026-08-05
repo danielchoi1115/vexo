@@ -4,6 +4,7 @@ import { Workspace } from './components/Workspace'
 import { SettingsModal } from './components/SettingsModal'
 import { useAppStore } from './stores/appStore'
 import { useSettingsStore } from './stores/settingsStore'
+import { initTerminalDataRouter } from './terminal/terminalCache'
 
 function App(): React.JSX.Element {
   const loadSessions = useAppStore((s) => s.loadSessions)
@@ -18,6 +19,7 @@ function App(): React.JSX.Element {
   const t = useSettingsStore((s) => s.t)
 
   useEffect(() => {
+    initTerminalDataRouter()
     void loadSettings()
     void loadSessions()
 

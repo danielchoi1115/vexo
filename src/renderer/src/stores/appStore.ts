@@ -16,7 +16,12 @@ import {
 } from '../layout/layoutOps'
 import { createLeaf, MAX_SESSIONS, type DropZone, type LayoutNode } from '../layout/types'
 import { useSettingsStore } from './settingsStore'
-import { disposeAllTerminals, disposeTerminal } from '../terminal/terminalCache'
+import {
+  disposeAllTerminals,
+  disposeTerminal,
+  initTerminalDataRouter,
+  preloadTerminal
+} from '../terminal/terminalCache'
 
 function leafExists(node: LayoutNode, leafId: string): boolean {
   if (node.type === 'leaf') return node.id === leafId
@@ -142,7 +147,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ connecting: true, error: null })
     try {
+      // Ensure SSH data router is live before connect (captures early output)
+      initTerminalDataRouter()
       const info = await window.api.ssh.connect({ sessionConfigId })
+      // Create xterm immediately so login prompts are not dropped before paint
+      preloadTerminal(info.id)
       set((s) => {
         const nextSessions = [...s.activeSessions.filter((a) => a.id !== info.id), info]
         let layout = s.layout
