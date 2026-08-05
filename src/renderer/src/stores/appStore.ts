@@ -16,6 +16,7 @@ import {
 } from '../layout/layoutOps'
 import { createLeaf, MAX_SESSIONS, type DropZone, type LayoutNode } from '../layout/types'
 import { useSettingsStore } from './settingsStore'
+import { disposeAllTerminals, disposeTerminal } from '../terminal/terminalCache'
 
 function leafExists(node: LayoutNode, leafId: string): boolean {
   if (node.type === 'leaf') return node.id === leafId
@@ -185,6 +186,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   disconnectSession: async (activeId) => {
     await window.api.ssh.disconnect(activeId)
+    disposeTerminal(activeId)
     set((s) => {
       const activeSessions = s.activeSessions.filter((a) => a.id !== activeId)
       let layout = s.layout ? removeTab(s.layout, activeId) : null
@@ -213,6 +215,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   disconnectAll: async () => {
     const ids = get().activeSessions.map((a) => a.id)
     await Promise.all(ids.map((id) => window.api.ssh.disconnect(id)))
+    disposeAllTerminals()
     set({
       activeSessions: [],
       focusedActiveId: null,
@@ -224,6 +227,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   disconnectOthers: async (keepId) => {
     const others = get().activeSessions.filter((a) => a.id !== keepId)
     await Promise.all(others.map((a) => window.api.ssh.disconnect(a.id)))
+    for (const a of others) disposeTerminal(a.id)
     set((s) => {
       const activeSessions = s.activeSessions.filter((a) => a.id === keepId)
       const layout = createLeaf([keepId], keepId)
@@ -247,6 +251,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         } catch {
           /* already gone */
         }
+        disposeTerminal(id)
       })
     )
     set((s) => {
