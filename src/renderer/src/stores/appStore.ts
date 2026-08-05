@@ -9,6 +9,7 @@ import type {
 import {
   addTabToLeaf,
   firstLeaf,
+  getVisibleActiveTabIds,
   moveTab,
   removeTab,
   resizeSplit,
@@ -48,8 +49,15 @@ interface AppState {
   settingsOpen: boolean
   selectedFolderId: string | null
   newSessionRequestId: number
+  /** Broadcast mode: keys from bottom input go to all visible connected tabs */
+  broadcastEnabled: boolean
 
   loadSessions: () => Promise<void>
+  setBroadcastEnabled: (v: boolean) => void
+  /** Visible (per-pane active) + connected session ids */
+  getBroadcastTargets: () => ActiveSessionInfo[]
+  /** Write raw terminal data to all broadcast targets */
+  broadcastWrite: (data: string) => void
   setSidebarTab: (tab: SidebarTab) => void
   setFocused: (id: string | null, leafId?: string | null) => void
   setFocusedLeaf: (leafId: string | null) => void
@@ -111,6 +119,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   settingsOpen: false,
   selectedFolderId: null,
   newSessionRequestId: 0,
+  broadcastEnabled: false,
 
   loadSessions: async () => {
     const [sessions, folders] = await Promise.all([
@@ -137,6 +146,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   setFollowTerminalFolder: (v) => set({ followTerminalFolder: v }),
   setSettingsOpen: (v) => set({ settingsOpen: v }),
   setSelectedFolderId: (id) => set({ selectedFolderId: id }),
+  setBroadcastEnabled: (v) => set({ broadcastEnabled: v }),
+  getBroadcastTargets: () => {
+    const { layout, activeSessions } = get()
+    const visible = new Set(getVisibleActiveTabIds(layout))
+    return activeSessions.filter((s) => visible.has(s.id) && s.status === 'connected')
+  },
+  broadcastWrite: (data) => {
+    if (!data) return
+    const targets = get().getBroadcastTargets()
+    for (const s of targets) {
+      void window.api.ssh.write(s.id, data)
+    }
+  },
   requestNewSession: () => {
     set((s) => ({
       sidebarTab: 'sessions',

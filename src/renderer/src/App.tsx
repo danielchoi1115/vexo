@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
+import { BroadcastBar } from './components/BroadcastBar'
 import { SettingsModal } from './components/SettingsModal'
 import { useAppStore } from './stores/appStore'
 import { useSettingsStore } from './stores/settingsStore'
@@ -53,6 +54,7 @@ function App(): React.JSX.Element {
           </div>
         )}
         <Workspace />
+        <BroadcastBar />
       </main>
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
     </div>

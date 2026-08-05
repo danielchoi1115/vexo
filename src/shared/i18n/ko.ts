@@ -120,5 +120,16 @@ export const ko: MessageTree = {
   locale: {
     en: 'English',
     ko: '한국어'
+  },
+  broadcast: {
+    title: '브로드캐스트 입력',
+    on: 'BROADCAST ON',
+    off: 'Broadcast 꺼짐',
+    hint: '켜면 보이는 터미널 전체에 한 번에 입력됩니다',
+    targeting: '{count}개 세션에 전송 중',
+    noTargets: '보이는 연결 세션이 없습니다',
+    placeholderOff: 'Broadcast를 켜면 여러 세션에 동시에 입력할 수 있습니다…',
+    placeholderOn: '여기에 입력 — 키가 보이는 터미널 전체에 전달됩니다…',
+    placeholderNoTargets: '레이아웃에 연결된 세션을 열어 주세요…'
   }
 }

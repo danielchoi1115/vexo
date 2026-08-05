@@ -118,6 +118,17 @@ export const en = {
   locale: {
     en: 'English',
     ko: '한국어'
+  },
+  broadcast: {
+    title: 'Broadcast input',
+    on: 'BROADCAST ON',
+    off: 'Broadcast off',
+    hint: 'Turn on to type once to all visible terminals',
+    targeting: 'Targeting {count} session(s)',
+    noTargets: 'No connected visible sessions',
+    placeholderOff: 'Enable Broadcast to type to multiple sessions…',
+    placeholderOn: 'Type here — keys go to all visible terminals…',
+    placeholderNoTargets: 'Open a connected session in the layout…'
   }
 }
 

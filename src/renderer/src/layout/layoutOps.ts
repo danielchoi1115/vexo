@@ -46,6 +46,15 @@ export function collectLeaves(node: LayoutNode): LayoutNode[] {
   return [...collectLeaves(node.children[0]), ...collectLeaves(node.children[1])]
 }
 
+/** Active tab id of each leaf pane (currently visible terminal per split) */
+export function getVisibleActiveTabIds(node: LayoutNode | null): string[] {
+  if (!node) return []
+  return collectLeaves(node)
+    .filter((l): l is Extract<LayoutNode, { type: 'leaf' }> => l.type === 'leaf')
+    .map((l) => l.activeTabId)
+    .filter((id): id is string => Boolean(id))
+}
+
 export function countTabs(node: LayoutNode): number {
   if (node.type === 'leaf') return node.tabIds.length
   return countTabs(node.children[0]) + countTabs(node.children[1])
