@@ -6,8 +6,7 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { TerminalView } from '../TerminalView'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { DropOverlay, zoneFromPoint } from './DropOverlay'
-
-const TAB_MIME = 'application/x-vexo-tab'
+import { SESSION_CONFIG_MIME, TAB_MIME } from '../../layout/dnd'
 
 interface Props {
   leaf: Extract<LayoutNode, { type: 'leaf' }>
@@ -21,6 +20,7 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
   const setLeafActive = useAppStore((s) => s.setLeafActive)
   const setFocusedLeaf = useAppStore((s) => s.setFocusedLeaf)
   const dropTab = useAppStore((s) => s.dropTab)
+  const connectSession = useAppStore((s) => s.connectSession)
   const disconnectSession = useAppStore((s) => s.disconnectSession)
   const disconnectAll = useAppStore((s) => s.disconnectAll)
   const disconnectOthers = useAppStore((s) => s.disconnectOthers)
@@ -101,6 +101,7 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
             onDragStart={(e) => {
               e.dataTransfer.setData(TAB_MIME, s.id)
               e.dataTransfer.effectAllowed = 'move'
+              e.dataTransfer.setData('text/plain', s.id)
             }}
             onClick={() => setLeafActive(leaf.id, s.id)}
             onContextMenu={(e) => {
@@ -154,7 +155,9 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
         ref={bodyRef}
         onDragOver={(e) => {
           e.preventDefault()
-          e.dataTransfer.dropEffect = 'move'
+          const types = [...e.dataTransfer.types]
+          const fromSidebar = types.includes(SESSION_CONFIG_MIME)
+          e.dataTransfer.dropEffect = fromSidebar ? 'copy' : 'move'
           if (bodyRef.current) {
             setDropZone(zoneFromPoint(bodyRef.current, e.clientX, e.clientY))
           }
@@ -166,13 +169,24 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
         }}
         onDrop={(e) => {
           e.preventDefault()
-          const tabId = e.dataTransfer.getData(TAB_MIME)
+          e.stopPropagation()
           const zone = bodyRef.current
             ? zoneFromPoint(bodyRef.current, e.clientX, e.clientY)
             : 'center'
           setDropZone(null)
-          if (!tabId) return
-          dropTab(tabId, leaf.id, zone)
+
+          // 1) Saved session from left sidebar → connect
+          const configId = e.dataTransfer.getData(SESSION_CONFIG_MIME)
+          if (configId) {
+            void connectSession(configId, { leafId: leaf.id, zone })
+            return
+          }
+
+          // 2) Existing tab reorder / split
+          const tabId = e.dataTransfer.getData(TAB_MIME)
+          if (tabId) {
+            dropTab(tabId, leaf.id, zone)
+          }
         }}
       >
         <DropOverlay zone={dropZone} />

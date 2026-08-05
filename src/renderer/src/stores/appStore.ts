@@ -58,7 +58,14 @@ interface AppState {
   setSettingsOpen: (v: boolean) => void
   setSelectedFolderId: (id: string | null) => void
   requestNewSession: () => void
-  connectSession: (sessionConfigId: string) => Promise<void>
+  /**
+   * Connect a saved session. Optional leafId/zone place the new tab
+   * (center = add to pane, edges = split like VS Code).
+   */
+  connectSession: (
+    sessionConfigId: string,
+    opts?: { leafId?: string; zone?: DropZone }
+  ) => Promise<void>
   disconnectSession: (activeId: string) => Promise<void>
   disconnectAll: () => Promise<void>
   disconnectOthers: (keepId: string) => Promise<void>
@@ -137,7 +144,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }))
   },
 
-  connectSession: async (sessionConfigId) => {
+  connectSession: async (sessionConfigId, opts) => {
     const { activeSessions } = get()
     if (activeSessions.length >= MAX_SESSIONS) {
       set({
@@ -147,15 +154,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ connecting: true, error: null })
     try {
-      // Ensure SSH data router is live before connect (captures early output)
       initTerminalDataRouter()
       const info = await window.api.ssh.connect({ sessionConfigId })
-      // Create xterm immediately so login prompts are not dropped before paint
       preloadTerminal(info.id)
       set((s) => {
         const nextSessions = [...s.activeSessions.filter((a) => a.id !== info.id), info]
         let layout = s.layout
         let focusedLeafId = s.focusedLeafId
+        const zone = opts?.zone ?? 'center'
+        const preferLeaf = opts?.leafId
 
         if (!layout) {
           layout = createLeaf([info.id], info.id)
@@ -163,14 +170,28 @@ export const useAppStore = create<AppState>((set, get) => ({
         } else {
           const fl = firstLeaf(layout)
           const targetLeafId =
-            focusedLeafId && leafExists(layout, focusedLeafId)
-              ? focusedLeafId
-              : fl.type === 'leaf'
-                ? fl.id
-                : null
+            preferLeaf && leafExists(layout, preferLeaf)
+              ? preferLeaf
+              : focusedLeafId && leafExists(layout, focusedLeafId)
+                ? focusedLeafId
+                : fl.type === 'leaf'
+                  ? fl.id
+                  : null
+
           if (targetLeafId) {
-            layout = addTabToLeaf(layout, targetLeafId, info.id, true)
-            focusedLeafId = targetLeafId
+            if (zone === 'center') {
+              layout = addTabToLeaf(layout, targetLeafId, info.id, true)
+              focusedLeafId = targetLeafId
+            } else {
+              // Split target pane and put the new session on the new side
+              const split = moveTab(layout, info.id, targetLeafId, zone)
+              layout = split ?? createLeaf([info.id], info.id)
+              const find = (n: LayoutNode): string | null => {
+                if (n.type === 'leaf') return n.tabIds.includes(info.id) ? n.id : null
+                return find(n.children[0]) ?? find(n.children[1])
+              }
+              focusedLeafId = find(layout) ?? targetLeafId
+            }
           } else {
             layout = createLeaf([info.id], info.id)
             focusedLeafId = layout.id

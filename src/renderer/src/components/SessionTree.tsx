@@ -235,7 +235,13 @@ export function SessionTree(): React.JSX.Element {
     activeDrag = { type, id }
     e.dataTransfer.setData('text/plain', `${type}:${id}`)
     e.dataTransfer.setData('application/x-vexo-tree', JSON.stringify({ type, id }))
-    e.dataTransfer.effectAllowed = 'move'
+    // Saved session can also be dropped on the workspace to connect
+    if (type === 'session') {
+      e.dataTransfer.setData('application/x-vexo-session-config', id)
+      e.dataTransfer.effectAllowed = 'copyMove'
+    } else {
+      e.dataTransfer.effectAllowed = 'move'
+    }
   }
 
   const onDragEnd = (): void => {

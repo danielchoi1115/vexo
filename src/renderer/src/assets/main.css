@@ -467,8 +467,23 @@ select:focus {
 }
 
 .empty-workspace {
+  position: relative;
   align-items: center;
   justify-content: center;
+}
+
+.drop-hint-text {
+  margin-top: 12px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.tree-item.session[draggable='true'] {
+  cursor: grab;
+}
+
+.tree-item.session[draggable='true']:active {
+  cursor: grabbing;
 }
 
 /* --- Split layout (VS Code-style) --- */
