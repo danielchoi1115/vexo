@@ -276,9 +276,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   upsertActive: (info) => {
     set((s) => {
       const idx = s.activeSessions.findIndex((a) => a.id === info.id)
+      // Only update sessions we already track (connectSession owns creation + layout).
+      // Avoid status events inserting sessions without a layout (blank UI).
+      if (idx < 0) return s
       const activeSessions = [...s.activeSessions]
-      if (idx >= 0) activeSessions[idx] = { ...activeSessions[idx], ...info }
-      else activeSessions.push(info)
+      activeSessions[idx] = { ...activeSessions[idx], ...info }
       return { activeSessions }
     })
   },
