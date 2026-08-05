@@ -295,12 +295,3 @@ export function preloadTerminal(sessionId: string): void {
   initTerminalDataRouter()
   acquireTerminal(sessionId)
 }
-
-function fitAndResize(entry: CachedTerminal): void {
-  try {
-    entry.fit.fit()
-    void window.api.ssh.resize(entry.sessionId, entry.term.cols, entry.term.rows)
-  } catch {
-    /* not measurable yet */
-  }
-}
