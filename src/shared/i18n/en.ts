@@ -123,12 +123,14 @@ export const en = {
     title: 'Broadcast input',
     on: 'BROADCAST ON',
     off: 'Broadcast off',
-    hint: 'Turn on to type once to all visible terminals',
+    hint: 'Send commands to all sessions',
     targeting: 'Targeting {count} session(s)',
     noTargets: 'No connected visible sessions',
-    placeholderOff: 'Enable Broadcast to type to multiple sessions…',
-    placeholderOn: 'Type here — keys go to all visible terminals…',
-    placeholderNoTargets: 'Open a connected session in the layout…'
+    placeholderOn: 'Enter a command — sent to all visible terminals on Enter…',
+    placeholderNoTargets: 'Open a connected session in the layout…',
+    send: 'Send',
+    special: 'Special',
+    clearHistory: 'Clear history'
   }
 }
 

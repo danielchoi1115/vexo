@@ -226,4 +226,9 @@ export interface VexoApi {
   window: {
     setTitle: (title: string) => Promise<void>
   }
+  broadcast: {
+    getHistory: () => Promise<string[]>
+    pushHistory: (line: string) => Promise<string[]>
+    clearHistory: () => Promise<string[]>
+  }
 }

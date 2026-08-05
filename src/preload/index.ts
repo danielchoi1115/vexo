@@ -100,6 +100,11 @@ const api: VexoApi = {
   },
   window: {
     setTitle: (title: string) => ipcRenderer.invoke('window:setTitle', title)
+  },
+  broadcast: {
+    getHistory: () => ipcRenderer.invoke('broadcast:history:get'),
+    pushHistory: (line: string) => ipcRenderer.invoke('broadcast:history:push', line),
+    clearHistory: () => ipcRenderer.invoke('broadcast:history:clear')
   }
 }
 

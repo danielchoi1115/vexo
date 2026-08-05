@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'fs'
 import type { ConnectOptions, SessionInput, TreeReorderPayload, AppSettings } from '../shared/types'
 import * as sessionStore from './sessionStore'
 import * as settingsStore from './settingsStore'
+import * as broadcastHistory from './broadcastHistoryStore'
 import type { SshManager } from './ssh/SshManager'
 
 export function registerIpc(ssh: SshManager, getWindow: () => BrowserWindow | null): void {
@@ -13,6 +14,12 @@ export function registerIpc(ssh: SshManager, getWindow: () => BrowserWindow | nu
       win.setTitle(title || 'Vexo')
     }
   })
+
+  ipcMain.handle('broadcast:history:get', () => broadcastHistory.getHistory())
+  ipcMain.handle('broadcast:history:push', (_e, line: string) =>
+    broadcastHistory.pushCommand(line)
+  )
+  ipcMain.handle('broadcast:history:clear', () => broadcastHistory.clearHistory())
 
   ipcMain.handle('sessions:list', () => sessionStore.listSessions())
   ipcMain.handle('sessions:listFolders', () => sessionStore.listFolders())

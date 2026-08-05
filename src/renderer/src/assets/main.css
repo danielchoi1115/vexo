@@ -435,16 +435,22 @@ select:focus {
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   background: var(--bg-elevated);
-  padding: 8px 12px 10px;
+  padding: 6px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   transition:
     background 0.15s ease,
-    box-shadow 0.15s ease;
+    box-shadow 0.15s ease,
+    padding 0.12s ease;
+}
+
+.broadcast-bar.broadcast-off {
+  padding: 6px 12px;
 }
 
 .broadcast-bar.broadcast-on {
+  padding: 8px 12px 10px;
   background: color-mix(in srgb, #e74c3c 14%, var(--bg-elevated));
   box-shadow: inset 0 2px 0 0 #e74c3c;
 }
@@ -559,10 +565,13 @@ select:focus {
 
 .broadcast-input-row {
   display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .broadcast-input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   height: 34px;
   box-sizing: border-box;
   padding: 0 12px;
@@ -587,6 +596,32 @@ select:focus {
 .broadcast-input:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.broadcast-send-btn {
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 14px;
+}
+
+.broadcast-special-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.broadcast-special-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-right: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.broadcast-special-btn {
+  font-family: var(--term-font);
+  font-size: 12px;
 }
 
 .top-banner {
