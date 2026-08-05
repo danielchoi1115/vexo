@@ -30,13 +30,24 @@ export function Workspace(): React.JSX.Element {
     document.title = title
   }, [focusedActiveId, activeSessions, sessions])
 
-  if (activeSessions.length === 0 || !layout) {
+  if (activeSessions.length === 0) {
     return (
       <div className="workspace empty-workspace">
         <div className="welcome">
           <h2>{t('app.welcomeTitle')}</h2>
           <p>{t('app.welcomeBody')}</p>
           <p className="muted">{t('app.welcomeHint')}</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Active sessions without layout (race) — still render a simple single pane via layout fallback
+  if (!layout) {
+    return (
+      <div className="workspace empty-workspace">
+        <div className="welcome">
+          <p className="muted">Preparing terminal…</p>
         </div>
       </div>
     )

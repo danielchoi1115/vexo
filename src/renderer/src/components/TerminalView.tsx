@@ -4,11 +4,13 @@ import { useSettingsStore } from '../stores/settingsStore'
 import {
   applyTerminalSettings,
   attachTerminal,
-  setTerminalActive
+  parkTerminal,
+  setTerminalFocused
 } from '../terminal/terminalCache'
 
 interface Props {
   activeSessionId: string
+  /** Whether this terminal has keyboard focus (visible + focused pane) */
   active: boolean
 }
 
@@ -21,46 +23,42 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
   const fontFamily = useSettingsStore((s) => s.terminalFontFamily)
   const fontSize = useSettingsStore((s) => s.terminalFontSize)
   const themeId = useSettingsStore((s) => s.colorScheme)
+  const mountedId = useRef<string | null>(null)
 
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
+
+    mountedId.current = activeSessionId
     attachTerminal(activeSessionId, el, active)
-    // On unmount: leave terminal in cache (still attached or orphaned under hostEl).
-    // Detach from this container only if still parented here — keep hostEl alive.
+
     return () => {
-      const host = el.querySelector('.terminal-host-cached') as HTMLElement | null
-      // Keep node; optional detach so React can clear container
-      if (host && host.parentElement === el) {
-        // Move to document body off-screen park so xterm DOM is not destroyed
-        host.style.position = 'fixed'
-        host.style.left = '-10000px'
-        host.style.top = '0'
-        host.style.width = '800px'
-        host.style.height = '400px'
-        document.body.appendChild(host)
+      // Only park if this effect still owns the session (avoid racing remounts)
+      if (mountedId.current === activeSessionId) {
+        parkTerminal(activeSessionId)
+        mountedId.current = null
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-attach only when session changes
   }, [activeSessionId])
 
   useEffect(() => {
-    setTerminalActive(activeSessionId, active)
+    setTerminalFocused(activeSessionId, active)
   }, [active, activeSessionId])
 
   useEffect(() => {
     applyTerminalSettings(activeSessionId)
   }, [fontFamily, fontSize, themeId, activeSessionId])
 
-  // ResizeObserver on React container
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const ro = new ResizeObserver(() => {
-      if (active) applyTerminalSettings(activeSessionId)
+      applyTerminalSettings(activeSessionId)
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [activeSessionId, active])
+  }, [activeSessionId])
 
   return <div className="terminal-host-slot" ref={containerRef} data-active={active} />
 }

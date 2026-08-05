@@ -177,15 +177,19 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
       >
         <DropOverlay zone={dropZone} />
         {paneSessions.map((s) => {
-          const isActive = s.id === activeTabId
-          const isFocusedTerm = isActive && isLeafFocused && focusedActiveId === s.id
+          const isActiveTab = s.id === activeTabId
+          // Visible tab always mounts terminal; "active" = has keyboard focus
+          const hasKeyboardFocus =
+            isActiveTab && isLeafFocused && focusedActiveId === s.id
           return (
             <div
               key={s.id}
               className="session-pane"
-              style={{ display: isActive ? 'flex' : 'none' }}
+              style={{ display: isActiveTab ? 'flex' : 'none' }}
             >
-              <TerminalView activeSessionId={s.id} active={!!isFocusedTerm} />
+              {/* Keep all pane tabs mounted so xterm isn't destroyed on tab switch within pane.
+                  Session id is stable across splits via terminalCache. */}
+              <TerminalView activeSessionId={s.id} active={!!hasKeyboardFocus} />
             </div>
           )
         })}

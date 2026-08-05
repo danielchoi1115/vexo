@@ -9,14 +9,28 @@ export interface CachedTerminal {
   sessionId: string
   term: Terminal
   fit: FitAddon
-  /** Detached wrapper we move between React hosts without disposing xterm */
+  /** Detached wrapper moved between React hosts without disposing xterm */
   hostEl: HTMLDivElement
-  pending: string[]
-  active: boolean
+  /** Whether this terminal currently has focus (fit/focus only — data always writes) */
+  focused: boolean
   dispose: () => void
 }
 
 const cache = new Map<string, CachedTerminal>()
+
+/** Off-screen park so React unmount never destroys xterm DOM */
+let park: HTMLDivElement | null = null
+function getPark(): HTMLDivElement {
+  if (!park) {
+    park = document.createElement('div')
+    park.id = 'vexo-terminal-park'
+    park.setAttribute('aria-hidden', 'true')
+    park.style.cssText =
+      'position:fixed;left:-10000px;top:0;width:800px;height:480px;overflow:hidden;opacity:0;pointer-events:none;'
+    document.body.appendChild(park)
+  }
+  return park
+}
 
 function toXtermTheme(t: TerminalTheme): ITheme {
   return {
@@ -50,9 +64,18 @@ function decodeB64(b64: string): string {
   return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
 }
 
+function fitAndResize(entry: CachedTerminal): void {
+  try {
+    entry.fit.fit()
+    void window.api.ssh.resize(entry.sessionId, entry.term.cols, entry.term.rows)
+  } catch {
+    /* not measurable yet */
+  }
+}
+
 /**
  * Get or create a long-lived terminal for a session.
- * Survives React remounts (e.g. split layout) so scrollback is preserved.
+ * Survives React remounts (split layout) so scrollback is preserved.
  */
 export function acquireTerminal(sessionId: string): CachedTerminal {
   const existing = cache.get(sessionId)
@@ -61,10 +84,11 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
   const settings = useSettingsStore.getState()
   const hostEl = document.createElement('div')
   hostEl.className = 'terminal-host terminal-host-cached'
-  hostEl.style.width = '100%'
-  hostEl.style.height = '100%'
-  hostEl.style.minHeight = '0'
-  hostEl.style.flex = '1'
+  hostEl.dataset.sessionId = sessionId
+  hostEl.style.cssText = 'width:100%;height:100%;min-height:0;flex:1;'
+
+  // Park first so open() has a real document parent (helps some renderers)
+  getPark().appendChild(hostEl)
 
   const term = new Terminal({
     cursorBlink: true,
@@ -90,22 +114,12 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     /* canvas fallback */
   }
 
-  const pending: string[] = []
-  let active = false
-
+  // Always write SSH data — never drop login prompts while React is mounting
   const unsubData = window.api.ssh.onData((id, b64) => {
     if (id !== sessionId) return
-    const decoded = decodeB64(b64)
     const entry = cache.get(sessionId)
     if (!entry) return
-    if (!entry.active) {
-      entry.pending.push(decoded)
-      if (entry.pending.length > 200) {
-        entry.pending = entry.pending.slice(-100)
-      }
-      return
-    }
-    term.write(decoded)
+    entry.term.write(decodeB64(b64))
   })
 
   const dataDisp = term.onData((data) => {
@@ -192,56 +206,59 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     term,
     fit,
     hostEl,
-    pending,
-    active,
+    focused: false,
     dispose
   }
   cache.set(sessionId, entry)
-
-  // Defer fit until attached to visible DOM
-  requestAnimationFrame(() => {
-    try {
-      fit.fit()
-      void window.api.ssh.resize(sessionId, term.cols, term.rows)
-    } catch {
-      /* not in DOM yet */
-    }
-  })
-
   return entry
 }
 
-export function attachTerminal(sessionId: string, container: HTMLElement, active: boolean): void {
+/** Attach (or re-attach) terminal host into a React container */
+export function attachTerminal(sessionId: string, container: HTMLElement, focused: boolean): void {
   const entry = acquireTerminal(sessionId)
+  // Reset park styles when reattaching to visible UI
+  entry.hostEl.style.position = ''
+  entry.hostEl.style.left = ''
+  entry.hostEl.style.top = ''
+  entry.hostEl.style.width = '100%'
+  entry.hostEl.style.height = '100%'
+  entry.hostEl.style.opacity = ''
+  entry.hostEl.style.pointerEvents = ''
+
   if (entry.hostEl.parentElement !== container) {
     container.appendChild(entry.hostEl)
   }
-  entry.active = active
-  if (active) {
-    for (const chunk of entry.pending) entry.term.write(chunk)
-    entry.pending = []
+  entry.focused = focused
+  // Double rAF: wait for layout after append
+  requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      try {
-        entry.fit.fit()
-        void window.api.ssh.resize(sessionId, entry.term.cols, entry.term.rows)
-        entry.term.focus()
-      } catch {
-        /* ignore */
+      fitAndResize(entry)
+      if (entry.focused) {
+        try {
+          entry.term.focus()
+        } catch {
+          /* ignore */
+        }
       }
     })
-  }
+  })
 }
 
-export function setTerminalActive(sessionId: string, active: boolean): void {
+/** Park terminal off-screen without destroying it (React unmount / split) */
+export function parkTerminal(sessionId: string): void {
   const entry = cache.get(sessionId)
   if (!entry) return
-  entry.active = active
-  if (active) {
-    for (const chunk of entry.pending) entry.term.write(chunk)
-    entry.pending = []
+  entry.focused = false
+  getPark().appendChild(entry.hostEl)
+}
+
+export function setTerminalFocused(sessionId: string, focused: boolean): void {
+  const entry = cache.get(sessionId)
+  if (!entry) return
+  entry.focused = focused
+  if (focused) {
+    fitAndResize(entry)
     try {
-      entry.fit.fit()
-      void window.api.ssh.resize(sessionId, entry.term.cols, entry.term.rows)
       entry.term.focus()
     } catch {
       /* ignore */
@@ -256,16 +273,7 @@ export function applyTerminalSettings(sessionId: string): void {
   entry.term.options.fontFamily = s.terminalFontFamily
   entry.term.options.fontSize = s.terminalFontSize
   entry.term.options.theme = toXtermTheme(s.theme)
-  try {
-    entry.fit.fit()
-    void window.api.ssh.resize(sessionId, entry.term.cols, entry.term.rows)
-  } catch {
-    /* ignore */
-  }
-}
-
-export function applyAllTerminalSettings(): void {
-  for (const id of cache.keys()) applyTerminalSettings(id)
+  fitAndResize(entry)
 }
 
 export function disposeTerminal(sessionId: string): void {
