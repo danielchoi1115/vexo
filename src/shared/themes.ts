@@ -524,5 +524,13 @@ export const DEFAULT_SETTINGS = {
   colorScheme: 'github-dark' as ColorSchemeId,
   pasteOnRightClick: true,
   remoteMonitoring: false,
-  copyOnSelect: true
+  copyOnSelect: true,
+  keepAliveIntervalSec: 30,
+  scrollback: 8000,
+  cursorStyle: 'block' as const,
+  cursorBlink: true,
+  bellStyle: 'none' as const,
+  defaultEncoding: 'utf-8' as const,
+  defaultTermType: 'xterm-256color' as const,
+  hostKeyPolicy: 'accept-new' as const
 }
