@@ -8,10 +8,12 @@ import type {
 } from '../../../shared/types'
 import {
   addTabToLeaf,
+  cycleTabsVisual,
   firstLeaf,
   getVisibleActiveTabIds,
   moveTab,
   removeTab,
+  replaceTabId,
   resizeSplit,
   setLeafActiveTab
 } from '../layout/layoutOps'
@@ -47,6 +49,8 @@ interface AppState {
   remoteCwd: Record<string, string>
   metrics: Record<string, RemoteMetrics>
   settingsOpen: boolean
+  /** Hide the left sidebar (Ctrl+Shift+B) */
+  sidebarCollapsed: boolean
   selectedFolderId: string | null
   newSessionRequestId: number
   /** Broadcast mode: keys from bottom input go to all visible connected tabs */
@@ -64,8 +68,13 @@ interface AppState {
   setError: (msg: string | null) => void
   setFollowTerminalFolder: (v: boolean) => void
   setSettingsOpen: (v: boolean) => void
+  toggleSidebar: () => void
   setSelectedFolderId: (id: string | null) => void
   requestNewSession: () => void
+  /** Next/prev tab across all panes (visual order: top→bottom, left→right) */
+  cycleTab: (direction: 'next' | 'prev') => void
+  /** Close the focused tab (Ctrl+W) */
+  closeFocusedTab: () => Promise<void>
   /**
    * Connect a saved session. Optional leafId/zone place the new tab
    * (center = add to pane, edges = split like VS Code).
@@ -78,6 +87,10 @@ interface AppState {
   disconnectAll: () => Promise<void>
   disconnectOthers: (keepId: string) => Promise<void>
   disconnectDisconnected: () => Promise<void>
+  /** Close a finished tab (Enter after session end) */
+  exitEndedSession: (activeId: string) => Promise<void>
+  /** Reconnect using the same session config (R after session end) */
+  restartSession: (activeId: string) => Promise<void>
   upsertActive: (info: ActiveSessionInfo) => void
   setRemoteCwd: (activeId: string, cwd: string) => void
   setMetrics: (m: RemoteMetrics) => void
@@ -117,6 +130,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   remoteCwd: {},
   metrics: {},
   settingsOpen: false,
+  sidebarCollapsed: false,
   selectedFolderId: null,
   newSessionRequestId: 0,
   broadcastEnabled: false,
@@ -145,8 +159,32 @@ export const useAppStore = create<AppState>((set, get) => ({
   setError: (msg) => set({ error: msg }),
   setFollowTerminalFolder: (v) => set({ followTerminalFolder: v }),
   setSettingsOpen: (v) => set({ settingsOpen: v }),
+  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setSelectedFolderId: (id) => set({ selectedFolderId: id }),
   setBroadcastEnabled: (v) => set({ broadcastEnabled: v }),
+
+  cycleTab: (direction) => {
+    const { layout, focusedActiveId } = get()
+    if (!layout) return
+
+    const result = cycleTabsVisual(
+      layout,
+      focusedActiveId,
+      direction === 'next' ? 1 : -1
+    )
+    if (!result) return
+    set({
+      layout: result.layout,
+      focusedActiveId: result.tabId,
+      focusedLeafId: result.leafId
+    })
+  },
+
+  closeFocusedTab: async () => {
+    const id = get().focusedActiveId
+    if (!id) return
+    await get().disconnectSession(id)
+  },
   getBroadcastTargets: () => {
     const { layout, activeSessions } = get()
     const visible = new Set(getVisibleActiveTabIds(layout))
@@ -262,6 +300,43 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       return { activeSessions, layout, focusedActiveId, focusedLeafId }
     })
+  },
+
+  exitEndedSession: async (activeId) => {
+    await get().disconnectSession(activeId)
+  },
+
+  restartSession: async (activeId) => {
+    const old = get().activeSessions.find((a) => a.id === activeId)
+    if (!old) return
+    const configId = old.sessionConfigId
+    set({ connecting: true, error: null })
+    try {
+      try {
+        await window.api.ssh.disconnect(activeId)
+      } catch {
+        /* already closed on server side */
+      }
+      disposeTerminal(activeId)
+      initTerminalDataRouter()
+      const info = await window.api.ssh.connect({ sessionConfigId: configId })
+      preloadTerminal(info.id)
+      set((s) => {
+        const activeSessions = s.activeSessions.map((a) => (a.id === activeId ? info : a))
+        const layout = s.layout
+          ? replaceTabId(s.layout, activeId, info.id)
+          : createLeaf([info.id], info.id)
+        return {
+          activeSessions,
+          layout,
+          focusedActiveId: s.focusedActiveId === activeId ? info.id : s.focusedActiveId,
+          connecting: false
+        }
+      })
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      set({ connecting: false, error: msg })
+    }
   },
 
   disconnectAll: async () => {

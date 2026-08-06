@@ -100,6 +100,25 @@ export function normalize(node: LayoutNode): LayoutNode | null {
   }
 }
 
+/** Replace a tab id everywhere it appears (used when restarting a session). */
+export function replaceTabId(node: LayoutNode, oldId: string, newId: string): LayoutNode {
+  if (node.type === 'leaf') {
+    if (!node.tabIds.includes(oldId)) return node
+    return {
+      ...node,
+      tabIds: node.tabIds.map((id) => (id === oldId ? newId : id)),
+      activeTabId: node.activeTabId === oldId ? newId : node.activeTabId
+    }
+  }
+  return {
+    ...node,
+    children: [
+      replaceTabId(node.children[0], oldId, newId),
+      replaceTabId(node.children[1], oldId, newId)
+    ]
+  }
+}
+
 export function removeTab(node: LayoutNode, tabId: string): LayoutNode | null {
   const walk = (n: LayoutNode): LayoutNode => {
     if (n.type === 'leaf') {
@@ -145,6 +164,106 @@ export function setLeafActiveTab(
   return mapLeaf(node, leafId, (leaf) =>
     leaf.tabIds.includes(tabId) ? { ...leaf, activeTabId: tabId } : leaf
   )
+}
+
+/** Normalized geometry of a leaf pane in the workspace (0–1). */
+export interface LeafRect {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  cx: number
+  cy: number
+  tabIds: string[]
+}
+
+/** Compute leaf rectangles from the split tree (relative unit square). */
+export function collectLeafRects(
+  node: LayoutNode,
+  x = 0,
+  y = 0,
+  w = 1,
+  h = 1
+): LeafRect[] {
+  if (node.type === 'leaf') {
+    return [
+      {
+        id: node.id,
+        x,
+        y,
+        w,
+        h,
+        cx: x + w / 2,
+        cy: y + h / 2,
+        tabIds: [...node.tabIds]
+      }
+    ]
+  }
+  const [s0, s1] = node.sizes
+  if (node.direction === 'row') {
+    // left | right
+    return [
+      ...collectLeafRects(node.children[0], x, y, w * s0, h),
+      ...collectLeafRects(node.children[1], x + w * s0, y, w * s1, h)
+    ]
+  }
+  // top / bottom
+  return [
+    ...collectLeafRects(node.children[0], x, y, w, h * s0),
+    ...collectLeafRects(node.children[1], x, y + h * s0, w, h * s1)
+  ]
+}
+
+/**
+ * All tabs in visual reading order (VS Code-like):
+ * panes top→bottom, left→right; within each pane, tab bar order.
+ */
+export function getTabsInVisualOrder(
+  root: LayoutNode
+): { leafId: string; tabId: string }[] {
+  const leaves = collectLeafRects(root).sort((a, b) => {
+    // Top to bottom first, then left to right
+    if (Math.abs(a.cy - b.cy) > 1e-6) return a.cy - b.cy
+    return a.cx - b.cx
+  })
+  const out: { leafId: string; tabId: string }[] = []
+  for (const leaf of leaves) {
+    for (const tabId of leaf.tabIds) {
+      out.push({ leafId: leaf.id, tabId })
+    }
+  }
+  return out
+}
+
+/**
+ * Cycle focus across all tabs in visual order (wraps).
+ * Returns updated layout + focused leaf/tab, or null if nothing to do.
+ */
+export function cycleTabsVisual(
+  root: LayoutNode,
+  currentTabId: string | null,
+  delta: 1 | -1
+): { layout: LayoutNode; leafId: string; tabId: string } | null {
+  const order = getTabsInVisualOrder(root)
+  if (order.length === 0) return null
+  if (order.length === 1) {
+    const only = order[0]!
+    return {
+      layout: setLeafActiveTab(root, only.leafId, only.tabId),
+      leafId: only.leafId,
+      tabId: only.tabId
+    }
+  }
+
+  let idx = currentTabId ? order.findIndex((t) => t.tabId === currentTabId) : -1
+  if (idx < 0) idx = 0
+  const next = order[(idx + delta + order.length) % order.length]!
+  return {
+    layout: setLeafActiveTab(root, next.leafId, next.tabId),
+    leafId: next.leafId,
+    tabId: next.tabId
+  }
 }
 
 /**

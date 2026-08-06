@@ -169,11 +169,7 @@ export function BroadcastBar(): React.JSX.Element | null {
               type="text"
               value={value}
               disabled={!canSend}
-              placeholder={
-                targets.length === 0
-                  ? t('broadcast.placeholderNoTargets')
-                  : t('broadcast.placeholderOn')
-              }
+              placeholder=""
               spellCheck={false}
               autoComplete="off"
               onChange={(e) => {
@@ -184,7 +180,7 @@ export function BroadcastBar(): React.JSX.Element | null {
             />
             <button
               type="button"
-              className="btn primary broadcast-send-btn"
+              className="btn broadcast-send-btn"
               disabled={!canSend}
               onClick={() => void sendLine()}
             >
@@ -220,18 +216,6 @@ export function BroadcastBar(): React.JSX.Element | null {
               onClick={sendCtrlL}
             >
               Ctrl+L
-            </button>
-            <button
-              type="button"
-              className="btn sm ghost broadcast-special-btn"
-              disabled={history.length === 0}
-              title={t('broadcast.clearHistory')}
-              onClick={() => {
-                void window.api.broadcast.clearHistory().then(setHistory)
-                setHistoryIndex(-1)
-              }}
-            >
-              {t('broadcast.clearHistory')}
             </button>
           </div>
         </>

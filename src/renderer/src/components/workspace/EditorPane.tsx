@@ -22,16 +22,16 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
   const dropTab = useAppStore((s) => s.dropTab)
   const connectSession = useAppStore((s) => s.connectSession)
   const disconnectSession = useAppStore((s) => s.disconnectSession)
-  const disconnectAll = useAppStore((s) => s.disconnectAll)
   const disconnectOthers = useAppStore((s) => s.disconnectOthers)
-  const disconnectDisconnected = useAppStore((s) => s.disconnectDisconnected)
-  const activeSessions = useAppStore((s) => s.activeSessions)
   const metrics = useAppStore((s) => s.metrics)
   const remoteMonitoring = useSettingsStore((s) => s.remoteMonitoring)
 
   const bodyRef = useRef<HTMLDivElement>(null)
+  const tabScrollRef = useRef<HTMLDivElement>(null)
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
   const [dropZone, setDropZone] = useState<DropZone | null>(null)
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+  const [paneMenu, setPaneMenu] = useState<{ x: number; y: number } | null>(null)
   const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const isLeafFocused = focusedLeafId === leaf.id
@@ -39,6 +39,10 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
   const paneSessions = leaf.tabIds
     .map((id) => sessions.find((s) => s.id === id))
     .filter(Boolean) as ActiveSessionInfo[]
+
+  const paneHasDisconnected = paneSessions.some(
+    (a) => a.status === 'disconnected' || a.status === 'error'
+  )
 
   useEffect(() => {
     if (!activeTabId || !isLeafFocused) return
@@ -49,9 +53,35 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
     })
   }, [activeTabId, isLeafFocused, leaf.tabIds.length])
 
-  const hasDisconnected = activeSessions.some(
-    (a) => a.status === 'disconnected' || a.status === 'error'
-  )
+  // Horizontal wheel → scroll tab strip
+  useEffect(() => {
+    const el = tabScrollRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent): void => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return
+      if (el.scrollWidth <= el.clientWidth) return
+      e.preventDefault()
+      el.scrollLeft += e.deltaY
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
+  const closeAllInPane = (): void => {
+    const ids = [...leaf.tabIds]
+    for (const id of ids) {
+      void disconnectSession(id)
+    }
+  }
+
+  const closeDisconnectedInPane = (): void => {
+    const ids = paneSessions
+      .filter((s) => s.status === 'disconnected' || s.status === 'error')
+      .map((s) => s.id)
+    for (const id of ids) {
+      void disconnectSession(id)
+    }
+  }
 
   const tabMenuItems = (id: string): MenuItem[] => [
     {
@@ -61,19 +91,49 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
     {
       label: t('tabs.closeOthers'),
       onClick: () => void disconnectOthers(id),
-      disabled: activeSessions.length <= 1
+      disabled: paneSessions.length <= 1
     },
     {
-      label: t('tabs.closeDisconnected'),
-      onClick: () => void disconnectDisconnected(),
-      disabled: !hasDisconnected
+      label: t('tabs.closeDisconnectedInPane'),
+      onClick: closeDisconnectedInPane,
+      disabled: !paneHasDisconnected
     },
     {
-      label: t('tabs.closeAll'),
-      onClick: () => void disconnectAll(),
-      danger: true
+      label: t('tabs.closeAllInPane'),
+      onClick: closeAllInPane,
+      danger: true,
+      disabled: paneSessions.length === 0
     }
   ]
+
+  const paneMenuItems = (): MenuItem[] => [
+    {
+      label: t('tabs.closeAllInPane'),
+      onClick: closeAllInPane,
+      disabled: paneSessions.length === 0
+    },
+    {
+      label: t('tabs.closeDisconnectedInPane'),
+      onClick: closeDisconnectedInPane,
+      disabled: !paneHasDisconnected
+    }
+  ]
+
+  const openPaneMenu = (e: React.MouseEvent): void => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Focus this pane first (⋯ on an unfocused pane should steal focus)
+    setFocusedLeaf(leaf.id)
+    if (leaf.activeTabId) setLeafActive(leaf.id, leaf.activeTabId)
+    setTabMenu(null)
+    const btn = menuBtnRef.current
+    if (btn) {
+      const r = btn.getBoundingClientRect()
+      setPaneMenu({ x: r.right - 8, y: r.bottom + 2 })
+    } else {
+      setPaneMenu({ x: e.clientX, y: e.clientY })
+    }
+  }
 
   const focusedMetrics =
     activeTabId && isLeafFocused && focusedActiveId === activeTabId
@@ -89,42 +149,57 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
       }}
     >
       <div className="tab-bar">
-        {paneSessions.map((s) => (
-          <div
-            key={s.id}
-            ref={(node) => {
-              if (node) tabRefs.current.set(s.id, node)
-              else tabRefs.current.delete(s.id)
-            }}
-            className={`tab ${s.id === activeTabId ? 'active' : 'inactive'}`}
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData(TAB_MIME, s.id)
-              e.dataTransfer.effectAllowed = 'move'
-              e.dataTransfer.setData('text/plain', s.id)
-            }}
-            onClick={() => setLeafActive(leaf.id, s.id)}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              setLeafActive(leaf.id, s.id)
-              setTabMenu({ x: e.clientX, y: e.clientY, id: s.id })
-            }}
-          >
-            <span className={`status-dot ${s.status}`} />
-            <span className="tab-label">{s.name}</span>
-            <button
-              className="tab-close"
-              title={t('tabs.close')}
-              onClick={(e) => {
-                e.stopPropagation()
-                void disconnectSession(s.id)
+        <div className="tab-bar-scroll" ref={tabScrollRef}>
+          {paneSessions.map((s) => (
+            <div
+              key={s.id}
+              ref={(node) => {
+                if (node) tabRefs.current.set(s.id, node)
+                else tabRefs.current.delete(s.id)
+              }}
+              className={`tab ${s.id === activeTabId ? 'active' : 'inactive'}`}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData(TAB_MIME, s.id)
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', s.id)
+              }}
+              onClick={() => setLeafActive(leaf.id, s.id)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setLeafActive(leaf.id, s.id)
+                setPaneMenu(null)
+                setTabMenu({ x: e.clientX, y: e.clientY, id: s.id })
               }}
             >
-              ×
-            </button>
-          </div>
-        ))}
-        <div className="tab-bar-spacer" />
+              <span className={`status-dot ${s.status}`} />
+              <span className="tab-label">{s.name}</span>
+              <button
+                className="tab-close"
+                title={t('tabs.close')}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  void disconnectSession(s.id)
+                }}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="tab-bar-actions">
+          <button
+            ref={menuBtnRef}
+            type="button"
+            className="tab-bar-menu-btn"
+            title={t('tabs.paneMenu')}
+            aria-label={t('tabs.paneMenu')}
+            onClick={openPaneMenu}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            ⋯
+          </button>
+        </div>
       </div>
 
       {remoteMonitoring && focusedMetrics && isLeafFocused && (
@@ -175,14 +250,12 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
             : 'center'
           setDropZone(null)
 
-          // 1) Saved session from left sidebar → connect
           const configId = e.dataTransfer.getData(SESSION_CONFIG_MIME)
           if (configId) {
             void connectSession(configId, { leafId: leaf.id, zone })
             return
           }
 
-          // 2) Existing tab reorder / split
           const tabId = e.dataTransfer.getData(TAB_MIME)
           if (tabId) {
             dropTab(tabId, leaf.id, zone)
@@ -192,7 +265,6 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
         <DropOverlay zone={dropZone} />
         {paneSessions.map((s) => {
           const isActiveTab = s.id === activeTabId
-          // Visible tab always mounts terminal; "active" = has keyboard focus
           const hasKeyboardFocus =
             isActiveTab && isLeafFocused && focusedActiveId === s.id
           return (
@@ -201,8 +273,6 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
               className="session-pane"
               style={{ display: isActiveTab ? 'flex' : 'none' }}
             >
-              {/* Keep all pane tabs mounted so xterm isn't destroyed on tab switch within pane.
-                  Session id is stable across splits via terminalCache. */}
               <TerminalView activeSessionId={s.id} active={!!hasKeyboardFocus} />
             </div>
           )
@@ -218,6 +288,14 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
           y={tabMenu.y}
           items={tabMenuItems(tabMenu.id)}
           onClose={() => setTabMenu(null)}
+        />
+      )}
+      {paneMenu && (
+        <ContextMenu
+          x={paneMenu.x}
+          y={paneMenu.y}
+          items={paneMenuItems()}
+          onClose={() => setPaneMenu(null)}
         />
       )}
     </div>

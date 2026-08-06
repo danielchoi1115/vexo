@@ -55,7 +55,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     root.style.setProperty('--text', theme.foreground)
     root.style.setProperty('--muted', theme.uiMuted)
     root.style.setProperty('--accent', theme.uiAccent)
-    root.style.setProperty('--focus', theme.cursor || theme.blue || theme.uiAccent)
+    // Prefer blue/accent for chrome (focus rings, highlights). Cursor is often near-white.
+    root.style.setProperty('--focus', theme.blue || theme.uiAccent || theme.cursor)
     root.style.setProperty('--term-font', terminalFontFamily)
     root.style.setProperty('--term-font-size', `${terminalFontSize}px`)
     root.style.setProperty('--ui-font', uiFontFamily)

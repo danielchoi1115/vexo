@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 
 export interface MenuItem {
   label: string
@@ -15,6 +16,9 @@ interface Props {
   onClose: () => void
 }
 
+/**
+ * Portaled to document.body so pane opacity/stacking contexts cannot bury the menu.
+ */
 export function ContextMenu({ x, y, items, onClose }: Props): React.JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -25,10 +29,11 @@ export function ContextMenu({ x, y, items, onClose }: Props): React.JSX.Element 
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose()
     }
-    window.addEventListener('mousedown', onDown)
+    // capture so we close before other handlers
+    window.addEventListener('mousedown', onDown, true)
     window.addEventListener('keydown', onKey)
     return () => {
-      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('mousedown', onDown, true)
       window.removeEventListener('keydown', onKey)
     }
   }, [onClose])
@@ -45,7 +50,7 @@ export function ContextMenu({ x, y, items, onClose }: Props): React.JSX.Element 
     el.style.top = `${Math.max(4, top)}px`
   }, [x, y])
 
-  return (
+  return createPortal(
     <div className="context-menu fixed-menu" ref={ref} style={{ left: x, top: y }}>
       {items.map((item, i) =>
         item.separator ? (
@@ -53,6 +58,7 @@ export function ContextMenu({ x, y, items, onClose }: Props): React.JSX.Element 
         ) : (
           <button
             key={i}
+            type="button"
             disabled={item.disabled}
             className={item.danger ? 'danger' : undefined}
             onClick={() => {
@@ -65,6 +71,7 @@ export function ContextMenu({ x, y, items, onClose }: Props): React.JSX.Element 
           </button>
         )
       )}
-    </div>
+    </div>,
+    document.body
   )
 }

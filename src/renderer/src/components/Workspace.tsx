@@ -67,11 +67,7 @@ export function Workspace(): React.JSX.Element {
         <DropOverlay zone={emptyDropZone} />
         <div className="welcome">
           <h2>{t('app.welcomeTitle')}</h2>
-          <p>{t('app.welcomeBody')}</p>
-          <p className="muted">{t('app.welcomeHint')}</p>
-          <p className="muted drop-hint-text">
-            Drag a session from the left to open it here
-          </p>
+          <p className="muted">{t('app.welcomeBody')}</p>
         </div>
       </div>
     )
