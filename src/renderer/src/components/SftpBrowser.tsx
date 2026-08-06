@@ -63,33 +63,57 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
   followRef.current = follow
   /** Ignore follow-cwd updates until user navigates settles */
   const skipFollowRef = useRef(false)
+  /** Debounce timer for shell-integration cwdChanged → list */
+  const followTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const followGenRef = useRef(0)
 
-  const refresh = useCallback(async (p: string) => {
-    if (!activeSessionId) return
-    const normalized = p.trim() || '/'
-    setLoading(true)
-    setError(null)
-    try {
-      const list = await window.api.sftp.list(activeSessionId, normalized)
-      setEntries(list)
-      setPath(normalized)
-      setPathInput(normalized)
-      setSelected(null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-      setPathInput(pathRef.current)
-    } finally {
-      setLoading(false)
-    }
-  }, [activeSessionId])
+  const refresh = useCallback(
+    async (p: string, opts?: { quiet?: boolean }) => {
+      if (!activeSessionId) return
+      const normalized = p.trim() || '/'
+      const quiet = opts?.quiet === true
+      if (!quiet) {
+        setLoading(true)
+        setError(null)
+      }
+      try {
+        const list = await window.api.sftp.list(activeSessionId, normalized)
+        setEntries(list)
+        setPath(normalized)
+        setPathInput(normalized)
+        setSelected(null)
+        if (quiet) setError(null)
+      } catch (e) {
+        // Follow-driven navigations: keep current listing; soft notice only
+        if (quiet) {
+          setPathInput(pathRef.current)
+          const msg = e instanceof Error ? e.message : String(e)
+          const soft =
+            /no such file|ENOENT|permission denied|EACCES/i.test(msg)
+              ? t('sftp.followPathUnavailable')
+              : null
+          if (soft) setError(soft)
+          return
+        }
+        setError(e instanceof Error ? e.message : String(e))
+        setPathInput(pathRef.current)
+      } finally {
+        if (!quiet) setLoading(false)
+      }
+    },
+    [activeSessionId, t]
+  )
 
   /** User navigated manually — turn off follow terminal folder */
   const navigateUser = useCallback(
     (p: string) => {
       skipFollowRef.current = true
+      if (followTimerRef.current) {
+        clearTimeout(followTimerRef.current)
+        followTimerRef.current = null
+      }
       if (followRef.current) setFollow(false)
       void refresh(p).finally(() => {
-        // Allow follow again only after next enable by user
         skipFollowRef.current = false
       })
     },
@@ -129,10 +153,31 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on session switch
   }, [activeSessionId])
 
+  /**
+   * Shell-integration cwdChanged (ssh:cwd / remoteCwd): debounce 200ms,
+   * only list when path actually differs. Missing/denied paths stay quiet.
+   */
   useEffect(() => {
     if (!follow || !activeSessionId || skipFollowRef.current) return
     const cwd = remoteCwd[activeSessionId]
-    if (cwd && cwd !== pathRef.current) void refresh(cwd)
+    if (!cwd || cwd === pathRef.current) return
+
+    if (followTimerRef.current) clearTimeout(followTimerRef.current)
+    const gen = ++followGenRef.current
+    followTimerRef.current = setTimeout(() => {
+      followTimerRef.current = null
+      if (gen !== followGenRef.current) return
+      if (!followRef.current || skipFollowRef.current) return
+      if (cwd === pathRef.current) return
+      void refresh(cwd, { quiet: true })
+    }, 200)
+
+    return () => {
+      if (followTimerRef.current) {
+        clearTimeout(followTimerRef.current)
+        followTimerRef.current = null
+      }
+    }
   }, [follow, activeSessionId, remoteCwd, refresh])
 
   useEffect(() => {
@@ -375,11 +420,19 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
       {error && <div className="banner error compact">{error}</div>}
 
       <div className="sftp-footer">
-        <label className="check-row compact">
+        <label className="check-row compact" title={t('sftp.followFolderHint')}>
           <input
             type="checkbox"
             checked={follow}
-            onChange={(e) => setFollow(e.target.checked)}
+            onChange={(e) => {
+              const on = e.target.checked
+              setFollow(on)
+              // Turning on: immediately sync to last known shell/SFTP cwd
+              if (on && activeSessionId) {
+                const cwd = remoteCwd[activeSessionId]
+                if (cwd) void refresh(cwd, { quiet: true })
+              }
+            }}
           />
           {t('sftp.followFolder')}
         </label>
