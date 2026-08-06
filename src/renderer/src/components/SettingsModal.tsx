@@ -1,14 +1,59 @@
 import { useEffect, useMemo, useState } from 'react'
-import { COLOR_SCHEMES } from '../../../shared/themes'
-import type { AppSettings, ColorSchemeId, LocaleId } from '../../../shared/types'
+import { COLOR_SCHEMES, DEFAULT_SETTINGS } from '../../../shared/themes'
+import type {
+  AppSettings,
+  BellStyle,
+  ColorSchemeId,
+  CursorStyle,
+  HostKeyPolicy,
+  LocaleId,
+  TermType,
+  TerminalEncoding
+} from '../../../shared/types'
 import { useSettingsStore } from '../stores/settingsStore'
+import { applyTerminalSettingsToAll } from '../terminal/terminalCache'
 import { Select } from './Select'
+
+function pickSettings(s: AppSettings): AppSettings {
+  return {
+    locale: s.locale,
+    terminalFontFamily: s.terminalFontFamily,
+    terminalFontSize: s.terminalFontSize,
+    uiFontFamily: s.uiFontFamily,
+    uiFontSize: s.uiFontSize,
+    colorScheme: s.colorScheme,
+    pasteOnRightClick: s.pasteOnRightClick,
+    remoteMonitoring: s.remoteMonitoring,
+    copyOnSelect: s.copyOnSelect,
+    keepAliveIntervalSec: s.keepAliveIntervalSec ?? DEFAULT_SETTINGS.keepAliveIntervalSec,
+    scrollback: s.scrollback ?? DEFAULT_SETTINGS.scrollback,
+    cursorStyle: s.cursorStyle ?? DEFAULT_SETTINGS.cursorStyle,
+    cursorBlink: s.cursorBlink ?? DEFAULT_SETTINGS.cursorBlink,
+    bellStyle: s.bellStyle ?? DEFAULT_SETTINGS.bellStyle,
+    defaultEncoding: s.defaultEncoding ?? DEFAULT_SETTINGS.defaultEncoding,
+    defaultTermType: s.defaultTermType ?? DEFAULT_SETTINGS.defaultTermType,
+    hostKeyPolicy: s.hostKeyPolicy ?? DEFAULT_SETTINGS.hostKeyPolicy
+  }
+}
 
 interface Props {
   onClose: () => void
 }
 
-type SettingsTab = 'general' | 'appearance'
+type SettingsTab = 'general' | 'appearance' | 'shortcuts'
+
+const SHORTCUT_ROWS: { descKey: string; keys: string[] }[] = [
+  { descKey: 'settings.shortcutCloseTab', keys: ['Ctrl', 'W'] },
+  { descKey: 'settings.shortcutNextTab', keys: ['Ctrl', 'Tab'] },
+  { descKey: 'settings.shortcutNextTab', keys: ['Ctrl', '→'] },
+  { descKey: 'settings.shortcutPrevTab', keys: ['Ctrl', 'Shift', 'Tab'] },
+  { descKey: 'settings.shortcutPrevTab', keys: ['Ctrl', '←'] },
+  { descKey: 'settings.shortcutToggleSidebar', keys: ['Ctrl', 'Shift', 'B'] },
+  { descKey: 'settings.shortcutSettings', keys: ['Ctrl', ','] },
+  { descKey: 'settings.shortcutZoom', keys: ['Ctrl', 'Scroll'] },
+  { descKey: 'settings.shortcutEndedExit', keys: ['Enter'] },
+  { descKey: 'settings.shortcutEndedRestart', keys: ['R'] }
+]
 
 const PREFERRED_FONTS = [
   'Consolas',
@@ -37,41 +82,11 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
   const [tab, setTab] = useState<SettingsTab>('general')
   const [fonts, setFonts] = useState<string[]>(PREFERRED_FONTS)
 
-  const [draft, setDraft] = useState<AppSettings>({
-    locale: settings.locale,
-    terminalFontFamily: settings.terminalFontFamily,
-    terminalFontSize: settings.terminalFontSize,
-    uiFontFamily: settings.uiFontFamily,
-    uiFontSize: settings.uiFontSize,
-    colorScheme: settings.colorScheme,
-    pasteOnRightClick: settings.pasteOnRightClick,
-    remoteMonitoring: settings.remoteMonitoring,
-    copyOnSelect: settings.copyOnSelect
-  })
+  const [draft, setDraft] = useState<AppSettings>(() => pickSettings(settings))
 
   useEffect(() => {
-    setDraft({
-      locale: settings.locale,
-      terminalFontFamily: settings.terminalFontFamily,
-      terminalFontSize: settings.terminalFontSize,
-      uiFontFamily: settings.uiFontFamily,
-      uiFontSize: settings.uiFontSize,
-      colorScheme: settings.colorScheme,
-      pasteOnRightClick: settings.pasteOnRightClick,
-      remoteMonitoring: settings.remoteMonitoring,
-      copyOnSelect: settings.copyOnSelect
-    })
-  }, [
-    settings.locale,
-    settings.terminalFontFamily,
-    settings.terminalFontSize,
-    settings.uiFontFamily,
-    settings.uiFontSize,
-    settings.colorScheme,
-    settings.pasteOnRightClick,
-    settings.remoteMonitoring,
-    settings.copyOnSelect
-  ])
+    setDraft(pickSettings(settings))
+  }, [settings])
 
   useEffect(() => {
     void window.api.settings.listFonts().then((list) => {
@@ -86,17 +101,8 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
   }, [])
 
   const dirty = useMemo(() => {
-    return (
-      draft.locale !== settings.locale ||
-      draft.terminalFontFamily !== settings.terminalFontFamily ||
-      draft.terminalFontSize !== settings.terminalFontSize ||
-      draft.uiFontFamily !== settings.uiFontFamily ||
-      draft.uiFontSize !== settings.uiFontSize ||
-      draft.colorScheme !== settings.colorScheme ||
-      draft.pasteOnRightClick !== settings.pasteOnRightClick ||
-      draft.remoteMonitoring !== settings.remoteMonitoring ||
-      draft.copyOnSelect !== settings.copyOnSelect
-    )
+    const a = pickSettings(settings)
+    return (Object.keys(a) as (keyof AppSettings)[]).some((k) => draft[k] !== a[k])
   }, [draft, settings])
 
   const ensureFont = (family: string): string[] =>
@@ -115,6 +121,7 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
 
   const apply = async (): Promise<void> => {
     await settings.update(draft)
+    applyTerminalSettingsToAll()
   }
 
   const onOk = async (): Promise<void> => {
@@ -164,6 +171,13 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
             >
               {t('settings.appearance')}
             </button>
+            <button
+              type="button"
+              className={`settings-nav-item ${tab === 'shortcuts' ? 'active' : ''}`}
+              onClick={() => setTab('shortcuts')}
+            >
+              {t('settings.shortcuts')}
+            </button>
           </nav>
 
           <div className="settings-content">
@@ -189,7 +203,9 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
                   />
                   <span>
                     <strong>{t('settings.pasteRightClick')}</strong>
-                    <span className="settings-hint">{t('settings.pasteRightClickHint')}</span>
+                    {t('settings.pasteRightClickHint') ? (
+                      <span className="settings-hint">{t('settings.pasteRightClickHint')}</span>
+                    ) : null}
                   </span>
                 </label>
 
@@ -216,6 +232,61 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
                     <span className="settings-hint">{t('settings.remoteMonitoringHint')}</span>
                   </span>
                 </label>
+
+                <div className="settings-field">
+                  <span className="settings-label">{t('settings.keepAlive')}</span>
+                  <input
+                    className="settings-control"
+                    type="number"
+                    min={0}
+                    max={600}
+                    value={draft.keepAliveIntervalSec}
+                    onChange={(e) => patch({ keepAliveIntervalSec: Number(e.target.value) || 0 })}
+                  />
+                  <span className="settings-hint">{t('settings.keepAliveHint')}</span>
+                </div>
+
+                <div className="settings-field">
+                  <span className="settings-label">{t('settings.hostKeyPolicy')}</span>
+                  <Select
+                    value={draft.hostKeyPolicy}
+                    onChange={(v) => patch({ hostKeyPolicy: v as HostKeyPolicy })}
+                    options={[
+                      { value: 'accept-new', label: t('settings.hostKeyAcceptNew') },
+                      { value: 'strict', label: t('settings.hostKeyStrict') },
+                      { value: 'ignore', label: t('settings.hostKeyIgnore') }
+                    ]}
+                  />
+                  <span className="settings-hint">{t('settings.hostKeyHint')}</span>
+                </div>
+
+                <div className="settings-field">
+                  <span className="settings-label">{t('settings.defaultEncoding')}</span>
+                  <Select
+                    value={draft.defaultEncoding}
+                    onChange={(v) => patch({ defaultEncoding: v as TerminalEncoding })}
+                    options={[
+                      { value: 'utf-8', label: 'UTF-8' },
+                      { value: 'euc-kr', label: 'EUC-KR' },
+                      { value: 'cp949', label: 'CP949' },
+                      { value: 'gbk', label: 'GBK' },
+                      { value: 'latin1', label: 'Latin-1' }
+                    ]}
+                  />
+                </div>
+
+                <div className="settings-field">
+                  <span className="settings-label">{t('settings.defaultTermType')}</span>
+                  <Select
+                    value={draft.defaultTermType}
+                    onChange={(v) => patch({ defaultTermType: v as TermType })}
+                    options={[
+                      { value: 'xterm-256color', label: 'xterm-256color' },
+                      { value: 'xterm', label: 'xterm' },
+                      { value: 'vt100', label: 'vt100' }
+                    ]}
+                  />
+                </div>
               </section>
             )}
 
@@ -238,7 +309,7 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
                   <input
                     className="settings-control"
                     type="range"
-                    min={10}
+                    min={6}
                     max={28}
                     value={draft.terminalFontSize}
                     onChange={(e) => patch({ terminalFontSize: Number(e.target.value) })}
@@ -266,6 +337,56 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
                     max={18}
                     value={draft.uiFontSize}
                     onChange={(e) => patch({ uiFontSize: Number(e.target.value) })}
+                  />
+                </div>
+
+                <div className="settings-field">
+                  <span className="settings-label">{t('settings.scrollback')}</span>
+                  <input
+                    className="settings-control"
+                    type="number"
+                    min={100}
+                    max={100000}
+                    step={500}
+                    value={draft.scrollback}
+                    onChange={(e) => patch({ scrollback: Number(e.target.value) || 1000 })}
+                  />
+                </div>
+
+                <div className="settings-field">
+                  <span className="settings-label">{t('settings.cursorStyle')}</span>
+                  <Select
+                    value={draft.cursorStyle}
+                    onChange={(v) => patch({ cursorStyle: v as CursorStyle })}
+                    options={[
+                      { value: 'block', label: t('settings.cursorBlock') },
+                      { value: 'underline', label: t('settings.cursorUnderline') },
+                      { value: 'bar', label: t('settings.cursorBar') }
+                    ]}
+                  />
+                </div>
+
+                <label className="check-row settings-check">
+                  <input
+                    type="checkbox"
+                    checked={draft.cursorBlink}
+                    onChange={(e) => patch({ cursorBlink: e.target.checked })}
+                  />
+                  <span>
+                    <strong>{t('settings.cursorBlink')}</strong>
+                  </span>
+                </label>
+
+                <div className="settings-field">
+                  <span className="settings-label">{t('settings.bellStyle')}</span>
+                  <Select
+                    value={draft.bellStyle}
+                    onChange={(v) => patch({ bellStyle: v as BellStyle })}
+                    options={[
+                      { value: 'none', label: t('settings.bellNone') },
+                      { value: 'visual', label: t('settings.bellVisual') },
+                      { value: 'sound', label: t('settings.bellSound') }
+                    ]}
                   />
                 </div>
 
@@ -308,6 +429,29 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
                     </button>
                   ))}
                 </div>
+              </section>
+            )}
+
+            {tab === 'shortcuts' && (
+              <section className="settings-section">
+                <p className="settings-hint" style={{ marginTop: 0 }}>
+                  {t('settings.shortcutsDesc')}
+                </p>
+                <div className="shortcuts-list">
+                  {SHORTCUT_ROWS.map((row, i) => (
+                    <div key={`${row.descKey}-${row.keys.join('+')}-${i}`} className="shortcut-row">
+                      <span className="shortcut-desc">{t(row.descKey)}</span>
+                      <span className="shortcut-keys">
+                        {row.keys.map((k) => (
+                          <kbd key={k}>{k}</kbd>
+                        ))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {t('settings.shortcutsNote') ? (
+                  <p className="shortcut-note">{t('settings.shortcutsNote')}</p>
+                ) : null}
               </section>
             )}
           </div>

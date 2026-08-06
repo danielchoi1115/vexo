@@ -5,6 +5,8 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { SessionForm } from './SessionForm'
 import { PromptDialog } from './PromptDialog'
+import { ExportSessionsDialog } from './ExportSessionsDialog'
+import { ImportSessionsDialog } from './ImportSessionsDialog'
 
 type Ctx =
   | { kind: 'blank'; x: number; y: number }
@@ -48,6 +50,8 @@ export function SessionTree(): React.JSX.Element {
   const [menu, setMenu] = useState<Ctx | null>(null)
   const [dragOverKey, setDragOverKey] = useState<string | null>(null)
   const [prompt, setPrompt] = useState<PromptState>(null)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const lastNewSessionReq = useRef(0)
 
   // Only open New Session when + increments the request id (uses selected folder)
@@ -118,7 +122,12 @@ export function SessionTree(): React.JSX.Element {
       favorite: false,
       x11Forwarding: session.x11Forwarding !== false,
       compression: session.compression !== false,
-      backspaceSendsCtrlH: session.backspaceSendsCtrlH !== false
+      backspaceSendsCtrlH: session.backspaceSendsCtrlH !== false,
+      encoding: session.encoding,
+      termType: session.termType,
+      startupDirectory: session.startupDirectory,
+      startupCommand: session.startupCommand,
+      passwordSavePolicy: session.passwordSavePolicy
     })
     await loadSessions()
   }
@@ -132,44 +141,11 @@ export function SessionTree(): React.JSX.Element {
     { separator: true, label: '', onClick: () => {} },
     {
       label: t('session.export'),
-      onClick: () => {
-        void window.api.sessions.export().then((r) => {
-          if (r.ok) window.alert(t('session.exportedTo', { path: r.path }))
-        })
-      }
+      onClick: () => setExportOpen(true)
     },
     {
-      label: t('session.importMerge'),
-      onClick: () => {
-        void window.api.sessions
-          .import('merge')
-          .then((r) => {
-            if (r.ok) {
-              void loadSessions()
-              window.alert(
-                t('session.imported', { sessions: r.sessions, folders: r.folders })
-              )
-            }
-          })
-          .catch((e: Error) => window.alert(e.message))
-      }
-    },
-    {
-      label: t('session.importReplace'),
-      onClick: () => {
-        if (!window.confirm(t('session.replaceConfirm'))) return
-        void window.api.sessions
-          .import('replace')
-          .then((r) => {
-            if (r.ok) {
-              void loadSessions()
-              window.alert(
-                t('session.replaced', { sessions: r.sessions, folders: r.folders })
-              )
-            }
-          })
-          .catch((e: Error) => window.alert(e.message))
-      }
+      label: t('session.import'),
+      onClick: () => setImportOpen(true)
     },
     { separator: true, label: '', onClick: () => {} },
     { label: t('common.settings'), onClick: () => setSettingsOpen(true) }
@@ -498,6 +474,29 @@ export function SessionTree(): React.JSX.Element {
             />
           </div>
         </div>
+      )}
+
+      {exportOpen && (
+        <ExportSessionsDialog
+          onClose={() => setExportOpen(false)}
+          onDone={(path) => {
+            setExportOpen(false)
+            window.alert(t('session.exportedTo', { path }))
+          }}
+        />
+      )}
+
+      {importOpen && (
+        <ImportSessionsDialog
+          onClose={() => setImportOpen(false)}
+          onDone={(stats) => {
+            setImportOpen(false)
+            void loadSessions()
+            window.alert(
+              t('session.replaced', { sessions: stats.sessions, folders: stats.folders })
+            )
+          }}
+        />
       )}
     </div>
   )
