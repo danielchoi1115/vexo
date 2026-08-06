@@ -4,6 +4,7 @@ import { useSettingsStore } from '../stores/settingsStore'
 import {
   applyTerminalSettings,
   attachTerminal,
+  notifyTerminalContainerResized,
   parkTerminal,
   setTerminalFocused
 } from '../terminal/terminalCache'
@@ -54,11 +55,19 @@ export function TerminalView({ activeSessionId, active }: Props): React.JSX.Elem
     const el = containerRef.current
     if (!el) return
     const ro = new ResizeObserver(() => {
-      applyTerminalSettings(activeSessionId)
+      // Size-only: do not re-apply fonts (avoids thrashing); skip tiny sizes inside fit
+      notifyTerminalContainerResized(activeSessionId)
     })
     ro.observe(el)
     return () => ro.disconnect()
   }, [activeSessionId])
 
-  return <div className="terminal-host-slot" ref={containerRef} data-active={active} />
+  return (
+    <div
+      className="terminal-host-slot"
+      ref={containerRef}
+      data-active={active}
+      style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, display: 'flex' }}
+    />
+  )
 }

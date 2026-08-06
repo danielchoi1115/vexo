@@ -21,6 +21,19 @@ const earlyBuffer = new Map<string, string[]>()
 let park: HTMLDivElement | null = null
 let globalDataHooked = false
 
+/** Registered from App so we avoid circular imports with appStore */
+export interface EndedSessionHooks {
+  isEnded: (sessionId: string) => boolean
+  onExit: (sessionId: string) => void
+  onRestart: (sessionId: string) => void
+}
+
+let endedHooks: EndedSessionHooks | null = null
+
+export function registerEndedSessionHooks(hooks: EndedSessionHooks): void {
+  endedHooks = hooks
+}
+
 function getPark(): HTMLDivElement {
   if (!park) {
     park = document.createElement('div')
@@ -86,13 +99,95 @@ export function initTerminalDataRouter(): void {
   })
 }
 
-function fitAndResize(entry: CachedTerminal): void {
+/** Minimum viewport before we allow fit() — smaller sizes reflow-destroy long lines. */
+const MIN_FIT_WIDTH = 80
+const MIN_FIT_HEIGHT = 48
+const MIN_FIT_COLS = 20
+
+/**
+ * Fit xterm to its container when the size is trustworthy.
+ * Skipping tiny/hidden containers is critical: display:none or mid-split layouts
+ * report ~0 width and fit() reflows buffer lines into a few columns, permanently
+ * truncating prompts like "user@host's password:".
+ */
+function fitAndResize(entry: CachedTerminal): boolean {
   try {
+    const host = entry.hostEl
+    // Prefer the React container; fall back to host itself
+    const box = host.parentElement ?? host
+    const rect = box.getBoundingClientRect()
+    const w = rect.width
+    const h = rect.height
+
+    // Hidden (display:none), parked off-flow with no size, or mid-layout collapse
+    if (w < MIN_FIT_WIDTH || h < MIN_FIT_HEIGHT) {
+      return false
+    }
+    // Also skip if host itself is not laid out (e.g. still display:none)
+    if (host.offsetParent === null && getComputedStyle(host).position !== 'fixed') {
+      // Park uses position:fixed — allow that path when dimensions are ok
+      const park = host.closest('#vexo-terminal-park')
+      if (!park) return false
+    }
+
+    const prevCols = entry.term.cols
+    const prevRows = entry.term.rows
     entry.fit.fit()
-    void window.api.ssh.resize(entry.sessionId, entry.term.cols, entry.term.rows)
+    const cols = entry.term.cols
+    const rows = entry.term.rows
+
+    // Guard against pathological fit results
+    if (cols < MIN_FIT_COLS) {
+      if (prevCols >= MIN_FIT_COLS) {
+        try {
+          entry.term.resize(prevCols, Math.max(prevRows, 10))
+        } catch {
+          /* ignore */
+        }
+      }
+      return false
+    }
+
+    // Skip no-op resizes: thrashing reflow eats scrollback lines (↑ history symptom)
+    if (cols === prevCols && rows === prevRows) {
+      return true
+    }
+
+    void window.api.ssh.resize(entry.sessionId, cols, rows)
+    return true
   } catch {
-    /* not measurable yet */
+    return false
   }
+}
+
+/** Debounced fit — layout thrash must not reflow on every key/frame. */
+const fitTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function scheduleFitWhenReady(entry: CachedTerminal, attempts = 12): void {
+  const existing = fitTimers.get(entry.sessionId)
+  if (existing) clearTimeout(existing)
+
+  const run = (left: number): void => {
+    if (fitAndResize(entry)) {
+      fitTimers.delete(entry.sessionId)
+      return
+    }
+    if (left <= 0) {
+      fitTimers.delete(entry.sessionId)
+      return
+    }
+    const t = setTimeout(() => run(left - 1), 40)
+    fitTimers.set(entry.sessionId, t)
+  }
+
+  // First try next frame, then debounced retries
+  requestAnimationFrame(() => {
+    if (fitAndResize(entry)) {
+      fitTimers.delete(entry.sessionId)
+      return
+    }
+    run(attempts)
+  })
 }
 
 export function acquireTerminal(sessionId: string): CachedTerminal {
@@ -108,13 +203,42 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
   getPark().appendChild(hostEl)
 
   const term = new Terminal({
-    cursorBlink: true,
+    cursorBlink: settings.cursorBlink !== false,
+    cursorStyle: settings.cursorStyle || 'block',
     fontFamily: settings.terminalFontFamily,
     fontSize: settings.terminalFontSize,
-    scrollback: 8000,
+    scrollback: Math.min(100000, Math.max(100, settings.scrollback || 8000)),
     theme: toXtermTheme(settings.theme),
     allowProposedApi: true,
     rightClickSelectsWord: !settings.pasteOnRightClick
+  })
+  // Always wrap (DECAWM on) — no user toggle
+  applyLineWrap(term, true)
+  // xterm v6: no bellStyle option — handle via onBell
+  term.onBell(() => {
+    const style = useSettingsStore.getState().bellStyle
+    if (style === 'none') return
+    if (style === 'sound') {
+      try {
+        // short system beep via Web Audio (no asset required)
+        const ctx = new AudioContext()
+        const o = ctx.createOscillator()
+        const g = ctx.createGain()
+        o.connect(g)
+        g.connect(ctx.destination)
+        o.frequency.value = 880
+        g.gain.value = 0.05
+        o.start()
+        o.stop(ctx.currentTime + 0.08)
+        void ctx.close()
+      } catch {
+        /* ignore */
+      }
+      return
+    }
+    // visual: flash host border briefly
+    hostEl.classList.add('terminal-bell-flash')
+    window.setTimeout(() => hostEl.classList.remove('terminal-bell-flash'), 120)
   })
 
   const fit = new FitAddon()
@@ -139,6 +263,18 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
   }
 
   const dataDisp = term.onData((data) => {
+    // After session ends: Enter closes tab, R restarts (see SshManager hints)
+    if (endedHooks?.isEnded(sessionId)) {
+      if (data === '\r' || data === '\n' || data === '\r\n') {
+        endedHooks.onExit(sessionId)
+        return
+      }
+      if (data === 'r' || data === 'R') {
+        endedHooks.onRestart(sessionId)
+        return
+      }
+      return
+    }
     void window.api.ssh.write(sessionId, data)
   })
 
@@ -151,8 +287,35 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
 
   term.attachCustomKeyEventHandler((ev) => {
     if (ev.type !== 'keydown') return true
+
+    if (endedHooks?.isEnded(sessionId)) {
+      // Let printable Enter/R flow through onData; block everything else
+      if (ev.key === 'Enter' || ev.key === 'r' || ev.key === 'R') return true
+      if (ev.key === 'Shift' || ev.key === 'Control' || ev.key === 'Alt' || ev.key === 'Meta') {
+        return true
+      }
+      return false
+    }
+
     const mod = ev.ctrlKey || ev.metaKey
     if (!mod) return true
+
+    // App shortcuts — handled on window capture; do not send to PTY
+    const k = ev.key
+    const lower = k.length === 1 ? k.toLowerCase() : k
+    if (
+      lower === 'w' ||
+      k === 'Tab' ||
+      k === 'ArrowLeft' ||
+      k === 'ArrowRight' ||
+      k === 'Left' ||
+      k === 'Right' ||
+      k === ',' ||
+      k === 'Comma' ||
+      (ev.shiftKey && lower === 'b')
+    ) {
+      return false
+    }
 
     if (useSettingsStore.getState().copyOnSelect) return true
 
@@ -181,16 +344,19 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
   }
   hostEl.addEventListener('paste', onPaste)
 
+  // Capture phase so Ctrl+wheel never reaches xterm scroll first
   const onWheel = (e: WheelEvent): void => {
-    if (!e.ctrlKey) return
+    if (!e.ctrlKey && !e.metaKey) return
     e.preventDefault()
+    e.stopPropagation()
+    e.stopImmediatePropagation()
     const delta = e.deltaY > 0 ? -1 : 1
     const cur = useSettingsStore.getState().terminalFontSize || 14
     void useSettingsStore.getState().update({
-      terminalFontSize: Math.min(28, Math.max(10, cur + delta))
+      terminalFontSize: Math.min(28, Math.max(6, cur + delta))
     })
   }
-  hostEl.addEventListener('wheel', onWheel, { passive: false })
+  hostEl.addEventListener('wheel', onWheel, { passive: false, capture: true })
 
   const onContext = (e: MouseEvent): void => {
     if (!useSettingsStore.getState().pasteOnRightClick) return
@@ -205,7 +371,7 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     dataDisp.dispose()
     selDisp.dispose()
     hostEl.removeEventListener('paste', onPaste)
-    hostEl.removeEventListener('wheel', onWheel)
+    hostEl.removeEventListener('wheel', onWheel, { capture: true } as EventListenerOptions)
     hostEl.removeEventListener('contextmenu', onContext)
     term.dispose()
     hostEl.remove()
@@ -232,24 +398,24 @@ export function attachTerminal(sessionId: string, container: HTMLElement, focuse
     container.appendChild(entry.hostEl)
   }
   entry.focused = focused
-  requestAnimationFrame(() => {
+  // Wait for layout (split/pane move) so we never fit to a collapsed width
+  scheduleFitWhenReady(entry)
+  if (entry.focused) {
     requestAnimationFrame(() => {
-      fitAndResize(entry)
-      if (entry.focused) {
-        try {
-          entry.term.focus()
-        } catch {
-          /* ignore */
-        }
+      try {
+        entry.term.focus()
+      } catch {
+        /* ignore */
       }
     })
-  })
+  }
 }
 
 export function parkTerminal(sessionId: string): void {
   const entry = cache.get(sessionId)
   if (!entry) return
   entry.focused = false
+  // Do NOT fit while parking — park geometry must not reflow the buffer
   getPark().appendChild(entry.hostEl)
 }
 
@@ -258,12 +424,21 @@ export function setTerminalFocused(sessionId: string, focused: boolean): void {
   if (!entry) return
   entry.focused = focused
   if (focused) {
-    fitAndResize(entry)
+    scheduleFitWhenReady(entry)
     try {
       entry.term.focus()
     } catch {
       /* ignore */
     }
+  }
+}
+
+function applyLineWrap(term: Terminal, wrap: boolean): void {
+  // DECAWM: ?7h enable wrap, ?7l disable
+  try {
+    term.write(wrap ? '\x1b[?7h' : '\x1b[?7l')
+  } catch {
+    /* ignore */
   }
 }
 
@@ -274,7 +449,24 @@ export function applyTerminalSettings(sessionId: string): void {
   entry.term.options.fontFamily = s.terminalFontFamily
   entry.term.options.fontSize = s.terminalFontSize
   entry.term.options.theme = toXtermTheme(s.theme)
-  fitAndResize(entry)
+  entry.term.options.scrollback = Math.min(100000, Math.max(100, s.scrollback || 8000))
+  entry.term.options.cursorBlink = s.cursorBlink !== false
+  entry.term.options.cursorStyle = s.cursorStyle || 'block'
+  applyLineWrap(entry.term, true)
+  // Only fit if currently visible with a real size
+  scheduleFitWhenReady(entry)
+}
+
+/** Apply appearance settings to every open terminal (after settings save). */
+export function applyTerminalSettingsToAll(): void {
+  for (const id of cache.keys()) applyTerminalSettings(id)
+}
+
+/** Refit after container size changes (pane drag / split / window resize). */
+export function notifyTerminalContainerResized(sessionId: string): void {
+  const entry = cache.get(sessionId)
+  if (!entry) return
+  scheduleFitWhenReady(entry)
 }
 
 export function disposeTerminal(sessionId: string): void {
