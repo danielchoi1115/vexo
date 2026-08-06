@@ -5,7 +5,18 @@ import type {
   SessionInput,
   TreeReorderPayload
 } from '../shared/types'
-import { deleteSecret, hasSecret, setSecret } from './credentialStore'
+import {
+  deleteSecret,
+  exportPasswordsForSession,
+  getPassphraseForExport,
+  hasAnyPassword,
+  hasPassphrase,
+  importPasswordsForSession,
+  migrateLegacyPassword,
+  setPassphrase,
+  setPassphraseFromImport,
+  setPassword
+} from './credentialStore'
 
 interface SessionSchema {
   sessions: SessionConfig[]
@@ -66,9 +77,13 @@ function migrate(): void {
 migrate()
 
 function stripSecrets(s: SessionConfig): SessionConfig {
+  const user = (s.username || '').trim()
+  if (user) migrateLegacyPassword(s.id, user)
   return {
     ...s,
-    hasCredential: hasSecret(s.id)
+    hasCredential: user ? hasAnyPassword(s.id) : hasAnyPassword(s.id),
+    hasPassphrase: hasPassphrase(s.id),
+    passwordSavePolicy: s.passwordSavePolicy ?? 'ask'
   }
 }
 
@@ -116,11 +131,20 @@ export function saveSession(input: SessionInput & { id?: string }): SessionConfi
     lastConnectedAt: existing?.lastConnectedAt,
     x11Forwarding: input.x11Forwarding ?? existing?.x11Forwarding ?? true,
     compression: input.compression ?? existing?.compression ?? true,
-    backspaceSendsCtrlH: input.backspaceSendsCtrlH ?? existing?.backspaceSendsCtrlH ?? true
+    backspaceSendsCtrlH: input.backspaceSendsCtrlH ?? existing?.backspaceSendsCtrlH ?? true,
+    encoding: input.encoding ?? existing?.encoding,
+    termType: input.termType ?? existing?.termType,
+    startupDirectory: input.startupDirectory ?? existing?.startupDirectory,
+    startupCommand: input.startupCommand ?? existing?.startupCommand,
+    passwordSavePolicy: input.passwordSavePolicy ?? existing?.passwordSavePolicy ?? 'ask'
   }
 
-  if (input.password) setSecret(id, input.password)
-  if (input.passphrase) setSecret(`${id}:passphrase`, input.passphrase)
+  const user = (next.username || '').trim()
+  // Password only when username is set (account-scoped)
+  if (input.password && user) {
+    setPassword(id, user, input.password)
+  }
+  if (input.passphrase) setPassphrase(id, input.passphrase)
 
   const idx = sessions.findIndex((s) => s.id === id)
   if (idx >= 0) sessions[idx] = next
@@ -242,21 +266,45 @@ export interface SessionsExportFile {
   version: 1
   exportedAt: string
   folders: SessionFolder[]
-  sessions: Omit<SessionConfig, 'hasCredential'>[]
+  sessions: Omit<SessionConfig, 'hasCredential' | 'hasPassphrase'>[]
+  /** account passwords: sessionIndex or temp key → { username: password } */
+  secrets?: {
+    /** parallel to sessions[] by index at export time */
+    bySessionIndex: Array<{
+      passwords: Record<string, string>
+      passphrase?: string
+    }>
+  }
 }
 
-export function exportData(): SessionsExportFile {
-  const sessions = store.get('sessions').map((s) => {
+export function exportData(includeSecrets = false): SessionsExportFile {
+  const raw = store.get('sessions')
+  const sessions = raw.map((s) => {
     const stripped = stripSecrets(s)
-    const { hasCredential: _ignored, ...rest } = stripped
+    const { hasCredential: _c, hasPassphrase: _p, ...rest } = stripped
     return rest
   })
-  return {
+  const file: SessionsExportFile = {
     version: 1,
     exportedAt: new Date().toISOString(),
     folders: listFolders(),
     sessions
   }
+  if (includeSecrets) {
+    file.secrets = {
+      bySessionIndex: raw.map((s) => {
+        const passwords = exportPasswordsForSession(s.id)
+        // Drop empty-username legacy bucket from export map keys if any
+        const cleaned: Record<string, string> = {}
+        for (const [u, p] of Object.entries(passwords)) {
+          if (u && p) cleaned[u] = p
+        }
+        const passphrase = getPassphraseForExport(s.id) ?? undefined
+        return { passwords: cleaned, passphrase }
+      })
+    }
+  }
+  return file
 }
 
 export function importData(
@@ -268,6 +316,7 @@ export function importData(
   }
 
   if (mode === 'replace') {
+    for (const s of store.get('sessions')) deleteSecret(s.id)
     store.set('folders', [])
     store.set('sessions', [])
   }
@@ -296,6 +345,7 @@ export function importData(
 
   const sessions = store.get('sessions')
   let sessionsAdded = 0
+  let sessionIndex = 0
   for (const s of data.sessions) {
     const mappedFolder =
       s.folderId && folderIdMap.has(s.folderId)
@@ -315,6 +365,7 @@ export function importData(
           x.username === s.username
       )
     ) {
+      sessionIndex++
       continue
     }
 
@@ -334,10 +385,34 @@ export function importData(
       favorite: s.favorite ?? false,
       x11Forwarding: s.x11Forwarding !== false,
       compression: s.compression !== false,
-      backspaceSendsCtrlH: s.backspaceSendsCtrlH !== false
+      backspaceSendsCtrlH: s.backspaceSendsCtrlH !== false,
+      encoding: s.encoding,
+      termType: s.termType,
+      startupDirectory: s.startupDirectory,
+      startupCommand: s.startupCommand,
+      passwordSavePolicy: s.passwordSavePolicy ?? 'ask'
     })
+
+    const sec = data.secrets?.bySessionIndex?.[sessionIndex]
+    if (sec) {
+      if (sec.passwords) importPasswordsForSession(id, sec.passwords)
+      if (sec.passphrase) setPassphraseFromImport(id, sec.passphrase)
+    }
+    sessionIndex++
     sessionsAdded++
   }
   store.set('sessions', sessions)
   return { folders: foldersAdded, sessions: sessionsAdded }
+}
+
+export function updatePasswordSavePolicy(
+  id: string,
+  policy: NonNullable<SessionConfig['passwordSavePolicy']>
+): SessionConfig | undefined {
+  const sessions = store.get('sessions')
+  const idx = sessions.findIndex((s) => s.id === id)
+  if (idx < 0) return undefined
+  sessions[idx] = { ...sessions[idx], passwordSavePolicy: policy }
+  store.set('sessions', sessions)
+  return stripSecrets(sessions[idx])
 }
