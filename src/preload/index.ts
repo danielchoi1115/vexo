@@ -38,8 +38,11 @@ const api: VexoApi = {
     setFolderCollapsed: (id: string, collapsed: boolean) =>
       ipcRenderer.invoke('sessions:setFolderCollapsed', id, collapsed),
     reorder: (payload: TreeReorderPayload) => ipcRenderer.invoke('sessions:reorder', payload),
-    export: () => ipcRenderer.invoke('sessions:export'),
-    import: (mode?: 'merge' | 'replace') => ipcRenderer.invoke('sessions:import', mode ?? 'merge')
+    export: (opts?: { includeSecrets?: boolean; password?: string }) =>
+      ipcRenderer.invoke('sessions:export', opts),
+    pickImportFile: () => ipcRenderer.invoke('sessions:pickImportFile'),
+    importFile: (filePath: string, password?: string) =>
+      ipcRenderer.invoke('sessions:importFile', filePath, password)
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
@@ -60,7 +63,20 @@ const api: VexoApi = {
     onCwd: (callback: (activeSessionId: string, cwd: string) => void) =>
       onChannel<[string, string]>('ssh:cwd', callback),
     onMetrics: (callback: (metrics: RemoteMetrics) => void) =>
-      onChannel<[RemoteMetrics]>('ssh:metrics', callback)
+      onChannel<[RemoteMetrics]>('ssh:metrics', callback),
+    onAskPasswordSave: (callback) =>
+      onChannel<
+        [
+          {
+            activeSessionId: string
+            sessionConfigId: string
+            username: string
+            host: string
+          }
+        ]
+      >('ssh:askPasswordSave', callback),
+    answerPasswordSave: (activeSessionId, save, dontAskAgain) =>
+      ipcRenderer.invoke('ssh:answerPasswordSave', activeSessionId, save, dontAskAgain)
   },
   sftp: {
     list: (activeSessionId, remotePath) =>
@@ -100,6 +116,10 @@ const api: VexoApi = {
   },
   window: {
     setTitle: (title: string) => ipcRenderer.invoke('window:setTitle', title)
+  },
+  app: {
+    onShortcut: (callback) =>
+      onChannel<[{ action: 'tab-next' | 'tab-prev' }]>('app:shortcut', callback)
   },
   broadcast: {
     getHistory: () => ipcRenderer.invoke('broadcast:history:get'),

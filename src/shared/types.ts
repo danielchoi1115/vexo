@@ -1,5 +1,16 @@
 export type AuthMethod = 'password' | 'privateKey' | 'agent'
 
+/** Terminal byte encoding for SSH I/O */
+export type TerminalEncoding = 'utf-8' | 'euc-kr' | 'cp949' | 'gbk' | 'latin1'
+
+export type CursorStyle = 'block' | 'underline' | 'bar'
+export type BellStyle = 'none' | 'visual' | 'sound'
+/** OpenSSH-like host key checking */
+export type HostKeyPolicy = 'accept-new' | 'strict' | 'ignore'
+export type TermType = 'xterm-256color' | 'xterm' | 'vt100'
+/** When to offer / apply password save after login */
+export type PasswordSavePolicy = 'ask' | 'always' | 'never'
+
 export type ColorSchemeId =
   | 'github-dark'
   | 'dracula'
@@ -42,13 +53,29 @@ export interface SessionConfig {
   tags?: string[]
   favorite?: boolean
   lastConnectedAt?: number
+  /** True when a password is stored for this session (never the secret itself) */
   hasCredential?: boolean
+  /** True when a private-key passphrase is stored */
+  hasPassphrase?: boolean
   /** Default true */
   x11Forwarding?: boolean
   /** Default true */
   compression?: boolean
   /** Default true — send ^H (0x08) instead of DEL (0x7f) for Backspace */
   backspaceSendsCtrlH?: boolean
+  /** Terminal encoding for this session (default utf-8) */
+  encoding?: TerminalEncoding
+  /** TERM env / ssh term (default xterm-256color) */
+  termType?: TermType
+  /** Remote directory after login (optional) */
+  startupDirectory?: string
+  /** Command run once after shell is ready (optional) */
+  startupCommand?: string
+  /**
+   * Password save behavior for password auth:
+   * ask | always | never (default ask)
+   */
+  passwordSavePolicy?: PasswordSavePolicy
 }
 
 export interface SessionInput {
@@ -63,11 +90,17 @@ export interface SessionInput {
   color?: string
   tags?: string[]
   favorite?: boolean
+  /** Saved only when username is non-empty (account-scoped) */
   password?: string
   passphrase?: string
   x11Forwarding?: boolean
   compression?: boolean
   backspaceSendsCtrlH?: boolean
+  encoding?: TerminalEncoding
+  termType?: TermType
+  startupDirectory?: string
+  startupCommand?: string
+  passwordSavePolicy?: PasswordSavePolicy
 }
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
@@ -80,6 +113,7 @@ export interface ActiveSessionInfo {
   error?: string
   remoteCwd?: string
   backspaceSendsCtrlH?: boolean
+  encoding?: TerminalEncoding
 }
 
 export interface SftpEntry {
@@ -131,6 +165,19 @@ export interface AppSettings {
    * When false: use Ctrl+C (with selection) / Ctrl+V for copy-paste.
    */
   copyOnSelect: boolean
+  /** SSH TCP keep-alive interval in seconds (0 = off) */
+  keepAliveIntervalSec: number
+  /** xterm scrollback buffer lines */
+  scrollback: number
+  cursorStyle: CursorStyle
+  cursorBlink: boolean
+  bellStyle: BellStyle
+  /** Soft wrap at terminal edge (DECAWM) */
+  /** Default encoding for new sessions */
+  defaultEncoding: TerminalEncoding
+  /** Default TERM for new sessions */
+  defaultTermType: TermType
+  hostKeyPolicy: HostKeyPolicy
   /** @deprecated migrated to terminal* / ui* */
   fontFamily?: string
   fontSize?: number
@@ -166,10 +213,20 @@ export interface VexoApi {
     deleteFolder: (id: string) => Promise<void>
     setFolderCollapsed: (id: string, collapsed: boolean) => Promise<SessionFolder>
     reorder: (payload: TreeReorderPayload) => Promise<void>
-    export: () => Promise<{ ok: false } | { ok: true; path: string }>
-    import: (
-      mode?: 'merge' | 'replace'
-    ) => Promise<{ ok: false } | { ok: true; folders: number; sessions: number; path: string }>
+    export: (opts?: {
+      includeSecrets?: boolean
+      password?: string
+    }) => Promise<{ canceled: true } | { ok: true; path: string }>
+    /** Open file picker only — canceled leaves the UI modal open */
+    pickImportFile: () => Promise<
+      | { canceled: true }
+      | { ok: true; path: string; encrypted: boolean }
+    >
+    /** Import a previously picked file (replace). Password only if encrypted. */
+    importFile: (
+      filePath: string,
+      password?: string
+    ) => Promise<{ ok: true; folders: number; sessions: number; path: string }>
   }
   settings: {
     get: () => Promise<AppSettings>
@@ -186,6 +243,20 @@ export interface VexoApi {
     onStatus: (callback: (info: ActiveSessionInfo) => void) => () => void
     onCwd: (callback: (activeSessionId: string, cwd: string) => void) => () => void
     onMetrics: (callback: (metrics: RemoteMetrics) => void) => () => void
+    /** Password save dialog (after auth, before shell) */
+    onAskPasswordSave: (
+      callback: (payload: {
+        activeSessionId: string
+        sessionConfigId: string
+        username: string
+        host: string
+      }) => void
+    ) => () => void
+    answerPasswordSave: (
+      activeSessionId: string,
+      save: boolean,
+      dontAskAgain: boolean
+    ) => Promise<void>
   }
   sftp: {
     list: (activeSessionId: string, remotePath: string) => Promise<SftpEntry[]>
@@ -225,6 +296,12 @@ export interface VexoApi {
   }
   window: {
     setTitle: (title: string) => Promise<void>
+  }
+  /** Main-process delivered shortcuts (Ctrl+Arrow etc. that Chromium may eat) */
+  app: {
+    onShortcut: (
+      callback: (payload: { action: 'tab-next' | 'tab-prev' }) => void
+    ) => () => void
   }
   broadcast: {
     getHistory: () => Promise<string[]>

@@ -52,37 +52,85 @@ export function registerIpc(ssh: SshManager, getWindow: () => BrowserWindow | nu
     sessionStore.reorder(payload)
   })
 
-  ipcMain.handle('sessions:export', async () => {
-    const win = getWindow()
-    const result = await dialog.showSaveDialog(win!, {
-      title: 'Export sessions',
-      defaultPath: join(app.getPath('documents'), 'vexo-sessions.json'),
-      filters: [{ name: 'JSON', extensions: ['json'] }]
-    })
-    if (result.canceled || !result.filePath) return { ok: false as const }
-    const data = sessionStore.exportData()
-    writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf8')
-    return { ok: true as const, path: result.filePath }
-  })
+  ipcMain.handle(
+    'sessions:export',
+    async (_e, opts?: { includeSecrets?: boolean; password?: string }) => {
+      const win = getWindow()
+      const includeSecrets = Boolean(opts?.includeSecrets)
+      const password = opts?.password ?? ''
+      if (includeSecrets && !password) {
+        throw new Error('Password required when exporting secrets')
+      }
+      const result = await dialog.showSaveDialog(win!, {
+        title: includeSecrets ? 'Export sessions (encrypted)' : 'Export sessions',
+        defaultPath: join(
+          app.getPath('documents'),
+          includeSecrets ? 'vexo-sessions.encrypted.json' : 'vexo-sessions.json'
+        ),
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      })
+      if (result.canceled || !result.filePath) return { canceled: true as const }
+      const data = sessionStore.exportData(includeSecrets)
+      if (includeSecrets) {
+        const { encryptJson } = await import('./sessionCrypto')
+        writeFileSync(result.filePath, JSON.stringify(encryptJson(data, password), null, 2), 'utf8')
+      } else {
+        writeFileSync(result.filePath, JSON.stringify(data, null, 2), 'utf8')
+      }
+      return { ok: true as const, path: result.filePath }
+    }
+  )
 
-  ipcMain.handle('sessions:import', async (_e, mode: 'merge' | 'replace' = 'merge') => {
+  ipcMain.handle('sessions:pickImportFile', async () => {
     const win = getWindow()
     const result = await dialog.showOpenDialog(win!, {
       title: 'Import sessions',
       properties: ['openFile'],
       filters: [{ name: 'JSON', extensions: ['json'] }]
     })
-    if (result.canceled || !result.filePaths[0]) return { ok: false as const }
-    const raw = readFileSync(result.filePaths[0], 'utf8')
-    let parsed: sessionStore.SessionsExportFile
+    if (result.canceled || !result.filePaths[0]) return { canceled: true as const }
+    const path = result.filePaths[0]
+    const raw = readFileSync(path, 'utf8')
+    let parsed: unknown
     try {
-      parsed = JSON.parse(raw) as sessionStore.SessionsExportFile
+      parsed = JSON.parse(raw)
     } catch {
       throw new Error('Invalid JSON file')
     }
-    const stats = sessionStore.importData(parsed, mode)
-    return { ok: true as const, ...stats, path: result.filePaths[0] }
+    const { isEncryptedExport } = await import('./sessionCrypto')
+    return {
+      ok: true as const,
+      path,
+      encrypted: isEncryptedExport(parsed)
+    }
   })
+
+  ipcMain.handle(
+    'sessions:importFile',
+    async (_e, filePath: string, password?: string) => {
+      const raw = readFileSync(filePath, 'utf8')
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(raw)
+      } catch {
+        throw new Error('Invalid JSON file')
+      }
+      const { isEncryptedExport, decryptJson } = await import('./sessionCrypto')
+      let data: sessionStore.SessionsExportFile
+      if (isEncryptedExport(parsed)) {
+        if (!password) throw new Error('Password required for encrypted file')
+        try {
+          data = decryptJson<sessionStore.SessionsExportFile>(parsed, password)
+        } catch {
+          throw new Error('Decryption failed — wrong password or corrupt file')
+        }
+      } else {
+        data = parsed as sessionStore.SessionsExportFile
+      }
+      const stats = sessionStore.importData(data, 'replace')
+      return { ok: true as const, ...stats, path: filePath }
+    }
+  )
 
   ipcMain.handle('settings:get', () => settingsStore.getSettings())
   ipcMain.handle('settings:set', (_e, partial: Partial<AppSettings>) => {
@@ -124,6 +172,12 @@ export function registerIpc(ssh: SshManager, getWindow: () => BrowserWindow | nu
     ssh.resize(activeSessionId, cols, rows)
   })
   ipcMain.handle('ssh:listActive', () => ssh.listActive())
+  ipcMain.handle(
+    'ssh:answerPasswordSave',
+    (_e, activeSessionId: string, save: boolean, dontAskAgain: boolean) => {
+      ssh.answerPasswordSave(activeSessionId, save, dontAskAgain)
+    }
+  )
 
   ipcMain.handle('sftp:list', (_e, activeSessionId: string, remotePath: string) =>
     ssh.listDir(activeSessionId, remotePath)
