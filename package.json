@@ -18,13 +18,15 @@
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
-    "build:linux": "electron-vite build && electron-builder --linux"
+    "build:linux": "electron-vite build && electron-builder --linux",
+    "icons": "electron-icon-builder --input=./icon.png --output=./build --flatten && node -e \"const fs=require('fs');const p=require('path');const cp=(a,b)=>fs.copyFileSync(a,b);const b='build';const i=p.join(b,'icons');cp(p.join(i,'icon.ico'),p.join(b,'icon.ico'));cp(p.join(i,'icon.icns'),p.join(b,'icon.icns'));cp(p.join(i,'512x512.png'),p.join(b,'icon.png'));cp(p.join(i,'512x512.png'),p.join('resources','icon.png'));console.log('icons installed to build/ and resources/')\""
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "electron-store": "^8.2.0",
     "font-list": "^2.1.0",
+    "iconv-lite": "^0.7.3",
     "ssh2": "^1.17.0",
     "zustand": "^5.0.14"
   },
@@ -32,6 +34,7 @@
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",
+    "@types/iconv-lite": "^0.0.1",
     "@types/node": "^22.19.1",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
@@ -43,6 +46,7 @@
     "@xterm/xterm": "^6.0.0",
     "electron": "^39.2.6",
     "electron-builder": "^26.0.12",
+    "electron-icon-builder": "^2.0.1",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react": "^7.37.5",
