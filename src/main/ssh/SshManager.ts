@@ -2,30 +2,51 @@ import { Client, type ConnectConfig, type SFTPWrapper, type ClientChannel } from
 import { readFileSync, mkdirSync, existsSync } from 'fs'
 import { basename, join } from 'path'
 import { app, BrowserWindow, dialog } from 'electron'
+import iconv from 'iconv-lite'
 import type {
   ActiveSessionInfo,
   ConnectOptions,
   ConnectionStatus,
   RemoteMetrics,
   SftpEntry,
+  TerminalEncoding,
+  TermType,
   TransferProgress
 } from '../../shared/types'
-import { getSecret } from '../credentialStore'
-import { getSession, touchLastConnected } from '../sessionStore'
+import {
+  getPassword,
+  getPassphrase,
+  hasPassword,
+  setPassword
+} from '../credentialStore'
+import { getKnownHostKey, setKnownHostKey } from '../knownHostsStore'
+import { getSession, touchLastConnected, updatePasswordSavePolicy } from '../sessionStore'
 import { getSettings } from '../settingsStore'
 import { DataBatcher } from './DataBatcher'
+import { extractCwdsFromOscBuffer } from './cwdOsc'
+import {
+  BASH_ZSH_INTEGRATION,
+  FISH_INTEGRATION,
+  buildSourceCommand,
+  remoteIntegrationPaths,
+  shellKindFromPath,
+  type RemoteShellInfo
+} from './shellIntegration'
+
+/** Result of a terminal auth line prompt. */
+type AuthLineResult = { cancelled: true } | { cancelled: false; value: string }
 
 /** Collect a line of auth input from the terminal before shell is ready. */
 class AuthInput {
   private buffer = ''
-  private resolve: ((line: string) => void) | null = null
+  private resolve: ((result: AuthLineResult) => void) | null = null
   private echo = true
 
   get active(): boolean {
     return this.resolve !== null
   }
 
-  ask(prompt: string, echo: boolean, write: (s: string) => void): Promise<string> {
+  ask(prompt: string, echo: boolean, write: (s: string) => void): Promise<AuthLineResult> {
     this.echo = echo
     this.buffer = ''
     write(prompt)
@@ -44,12 +65,12 @@ class AuthInput {
         this.buffer = ''
         const r = this.resolve
         this.resolve = null
-        r(line)
+        // Empty Enter is a valid empty password attempt — not cancel
+        r({ cancelled: false, value: line })
         return true
       }
       // Backspace / Delete — erase buffer and always erase the visual glyph
-      // (plain char when echo, or '*' when password mode). Previously password
-      // mode skipped the terminal erase, so users could not "see" delete work.
+      // (plain char when echo, or '*' when password mode).
       if (ch === '\x7f' || ch === '\b') {
         if (this.buffer.length > 0) {
           this.buffer = this.buffer.slice(0, -1)
@@ -62,7 +83,7 @@ class AuthInput {
         const r = this.resolve
         this.resolve = null
         this.buffer = ''
-        r('')
+        r({ cancelled: true })
         return true
       }
       // Ignore other control chars; accept printable + tab
@@ -75,6 +96,16 @@ class AuthInput {
   }
 }
 
+/**
+ * Connection lifecycle phases — critical for not treating auth failures as
+ * "session ended", and for not cleaning up mid-retry.
+ *
+ * - auth: handshake / password retries (no shell yet)
+ * - shell: interactive session is up
+ * - ended: terminal exit hints shown; waiting for UI close/restart
+ */
+type SessionPhase = 'auth' | 'shell' | 'ended'
+
 interface LiveSession {
   info: ActiveSessionInfo
   client: Client
@@ -83,14 +114,54 @@ interface LiveSession {
   batcher: DataBatcher
   auth: AuthInput
   backspaceSendsCtrlH: boolean
-  /** Raw stream buffer for OSC 7 cwd parsing */
+  encoding: TerminalEncoding
+  /**
+   * Rolling buffer for shell-integration OSC sequences (633 / 7 / 1337).
+   * Passive parse of stream data; SI is sourced once after MOTD (echo muted).
+   */
   oscBuf: string
+  /** True after session-local shell integration was sourced into the PTY */
+  shellIntegrationReady?: boolean
+  /**
+   * While set, strip only SI inject echo lines (keep MOTD / prompt).
+   * Never drop unrelated stream data — that was eating Welcome banners.
+   */
+  siEchoFilterUntil?: number
+  /** Last data activity (for waiting until MOTD settles) */
+  lastStreamAt?: number
+  /** Total bytes received on the interactive shell stream */
+  streamBytes?: number
   metricsTimer?: ReturnType<typeof setInterval>
   lastNet?: { rx: number; tx: number; at: number }
+  phase: SessionPhase
+  /** Avoid double "session ended" prompts */
+  endedHintsShown?: boolean
+  /**
+   * Bumps on every Client replace so late error/close from the old Client
+   * cannot touch the new handshake (generation mismatch → ignore).
+   */
+  clientGen: number
+  /**
+   * While waiting for client.ready. Errors/close go here; they must NOT
+   * trigger session-ended cleanup (auth may retry on a new Client).
+   */
+  connectWaiter?: {
+    resolve: () => void
+    reject: (err: Error) => void
+    gen: number
+  } | null
+  /** Password used for the successful auth (for save prompt); null if from store already */
+  authPasswordPlain?: string | null
+  /** True if password was loaded from credential store (no save prompt) */
+  authPasswordFromStore?: boolean
+  passwordSaveWaiter?: {
+    resolve: () => void
+  } | null
+  /** Username used for the successful password auth */
+  lastAuthUsername?: string
 }
 
 const BATCH_MS = 12
-const OSC7_RE = /\x1b\]7;([^\x07\x1b]*)(?:\x07|\x1b\\)/g
 
 export class SshManager {
   private sessions = new Map<string, LiveSession>()
@@ -111,7 +182,191 @@ export class SshManager {
   }
 
   private termWrite(live: LiveSession, text: string): void {
+    // Local UI messages are always Unicode → UTF-8 to renderer
     live.batcher.push(Buffer.from(text, 'utf8'))
+  }
+
+  /** Decode remote PTY bytes → UTF-8 for the renderer */
+  private decodeRemote(live: LiveSession, buf: Buffer): Buffer {
+    if (live.encoding === 'utf-8' || live.encoding === 'latin1') {
+      if (live.encoding === 'utf-8') return buf
+      return Buffer.from(buf.toString('latin1'), 'utf8')
+    }
+    try {
+      const text = iconv.decode(buf, live.encoding === 'euc-kr' ? 'euc-kr' : live.encoding)
+      return Buffer.from(text, 'utf8')
+    } catch {
+      return buf
+    }
+  }
+
+  /** Encode renderer text → remote PTY bytes */
+  private encodeRemote(live: LiveSession, text: string): Buffer | string {
+    if (live.encoding === 'utf-8') return text
+    if (live.encoding === 'latin1') return Buffer.from(text, 'latin1')
+    try {
+      return iconv.encode(text, live.encoding === 'euc-kr' ? 'euc-kr' : live.encoding)
+    } catch {
+      return text
+    }
+  }
+
+  /**
+   * Final UI after a *real* interactive session ends (remote close, kill, etc.).
+   * Not used for Access denied / mid-auth handshake failures.
+   */
+  private writeSessionEndedHints(live: LiveSession): void {
+    if (live.endedHintsShown) return
+    live.endedHintsShown = true
+    live.phase = 'ended'
+    this.termWrite(
+      live,
+      '\r\n' +
+        '\x1b[33mSession ended.\x1b[0m\r\n' +
+        '\x1b[90mPress <return> to exit tab\x1b[0m\r\n' +
+        '\x1b[90mPress R to restart session\x1b[0m\r\n'
+    )
+  }
+
+  /** Exit/restart hints after connect failed before shell (no "Session ended"). */
+  private writeConnectFailedHints(live: LiveSession): void {
+    if (live.endedHintsShown) return
+    live.endedHintsShown = true
+    live.phase = 'ended'
+    this.termWrite(
+      live,
+      '\x1b[90mPress <return> to exit tab\x1b[0m\r\n' +
+        '\x1b[90mPress R to restart session\x1b[0m\r\n'
+    )
+  }
+
+  /**
+   * Permanent error/close handlers per Client.
+   * Generation check ignores events from replaced clients during auth retries.
+   */
+  private bindClient(live: LiveSession, client: Client, gen: number): void {
+    client.on('error', (err: Error) => {
+      try {
+        this.onClientError(live, client, gen, err)
+      } catch {
+        /* never rethrow from error handler */
+      }
+    })
+    client.on('close', () => {
+      try {
+        this.onClientClose(live, client, gen)
+      } catch {
+        /* ignore */
+      }
+    })
+  }
+
+  private onClientError(live: LiveSession, client: Client, gen: number, err: Error): void {
+    // Replaced during auth retry — ignore stale socket noise (often ECONNRESET after end)
+    if (live.clientGen !== gen || live.client !== client) return
+    if (live.phase === 'ended') return
+
+    // Auth / handshake wait: only reject the waiter. Do NOT end the session UI.
+    if (live.phase === 'auth') {
+      if (live.connectWaiter && live.connectWaiter.gen === gen) {
+        const waiter = live.connectWaiter
+        live.connectWaiter = null
+        waiter.reject(err)
+      }
+      return
+    }
+
+    // Live shell: real connection loss
+    if (live.phase === 'shell') {
+      if (!this.sessions.has(live.info.id)) return
+      this.termWrite(live, `\r\n\x1b[31m${err.message}\x1b[0m\r\n`)
+      this.writeSessionEndedHints(live)
+      this.setStatus(live, 'error', err.message)
+    }
+  }
+
+  private onClientClose(live: LiveSession, client: Client, gen: number): void {
+    if (live.clientGen !== gen || live.client !== client) return
+    if (live.phase === 'ended') return
+
+    // Auth phase close = failed handshake/auth attempt, not "session ended"
+    if (live.phase === 'auth') {
+      if (live.connectWaiter && live.connectWaiter.gen === gen) {
+        const waiter = live.connectWaiter
+        live.connectWaiter = null
+        waiter.reject(new Error('Connection closed before ready'))
+      }
+      return
+    }
+
+    // Shell closed (remote exit, network drop, etc.)
+    if (live.phase === 'shell' && this.sessions.has(live.info.id)) {
+      this.writeSessionEndedHints(live)
+      this.setStatus(live, 'disconnected')
+      this.cleanup(live.info.id, false)
+    }
+  }
+
+  private replaceClient(live: LiveSession): Client {
+    const old = live.client
+    const oldGen = live.clientGen
+    // Invalidate old generation so end()/close cannot touch auth state
+    live.clientGen = oldGen + 1
+    live.connectWaiter = null
+    try {
+      old.end()
+    } catch {
+      /* ignore */
+    }
+
+    const client = new Client()
+    live.client = client
+    this.bindClient(live, client, live.clientGen)
+    return client
+  }
+
+  private waitClientReady(
+    live: LiveSession,
+    client: Client,
+    connectConfig: ConnectConfig
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      if (live.client !== client) {
+        reject(new Error('Client was replaced'))
+        return
+      }
+      const gen = live.clientGen
+      let settled = false
+      const settleResolve = (): void => {
+        if (settled) return
+        settled = true
+        if (live.connectWaiter?.gen === gen) live.connectWaiter = null
+        resolve()
+      }
+      const settleReject = (err: Error): void => {
+        if (settled) return
+        settled = true
+        if (live.connectWaiter?.gen === gen) live.connectWaiter = null
+        reject(err)
+      }
+
+      live.connectWaiter = {
+        resolve: settleResolve,
+        reject: settleReject,
+        gen
+      }
+
+      client.once('ready', () => {
+        if (live.clientGen !== gen) return
+        settleResolve()
+      })
+
+      try {
+        client.connect(connectConfig)
+      } catch (err) {
+        settleReject(err instanceof Error ? err : new Error(String(err)))
+      }
+    })
   }
 
   /**
@@ -125,10 +380,13 @@ export class SshManager {
     const activeId = crypto.randomUUID()
     const client = new Client()
     const auth = new AuthInput()
+    const settings = getSettings()
+    const encoding: TerminalEncoding = config.encoding || settings.defaultEncoding || 'utf-8'
 
     const batcher = new DataBatcher(BATCH_MS, (buf) => {
       const win = this.getWindow()
       if (!win) return
+      // Always deliver UTF-8 to renderer (encoding applied in onStreamData path via live)
       win.webContents.send('ssh:data', activeId, buf.toString('base64'))
     })
 
@@ -139,21 +397,39 @@ export class SshManager {
         sessionConfigId: config.id,
         name: config.name,
         status: 'connecting',
-        backspaceSendsCtrlH
+        backspaceSendsCtrlH,
+        encoding
       },
       client,
       batcher,
       auth,
       backspaceSendsCtrlH,
-      oscBuf: ''
+      encoding,
+      oscBuf: '',
+      phase: 'auth',
+      clientGen: 0,
+      connectWaiter: null
     }
     this.sessions.set(activeId, live)
+    this.bindClient(live, client, 0)
     this.emitStatus(live.info)
 
-    void this.runConnect(live, options).catch((err: Error) => {
-      this.termWrite(live, `\r\n\x1b[31mConnection failed: ${err.message}\x1b[0m\r\n`)
-      this.setStatus(live, 'error', err.message)
-      this.cleanup(activeId, true)
+    void this.runConnect(live, options).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err)
+      try {
+        // Never got a shell — connection failed, not "session ended"
+        if (live.phase === 'auth' || live.phase === 'ended') {
+          if (!live.endedHintsShown) {
+            this.termWrite(live, `\r\n\x1b[31mConnection failed: ${message}\x1b[0m\r\n`)
+            this.writeConnectFailedHints(live)
+          }
+          this.setStatus(live, 'error', message)
+          // Keep session entry for Enter/R; tear down only the socket
+          this.teardownClient(live)
+        }
+      } catch {
+        /* session may already be gone */
+      }
     })
 
     return { ...live.info }
@@ -166,184 +442,558 @@ export class SshManager {
     const write = (s: string): void => this.termWrite(live, s)
     write(`\x1b[90mConnecting to ${config.host}:${config.port}…\x1b[0m\r\n`)
 
+    // Collect credentials BEFORE client.connect so readyTimeout only covers network/auth,
+    // not waiting for the user to type in the terminal.
     let username = (config.username || '').trim()
     if (!username) {
-      username = (await live.auth.ask('login as: ', true, write)).trim()
+      const userLine = await live.auth.ask('login as: ', true, write)
+      if (userLine.cancelled) throw new Error('Authentication cancelled')
+      username = userLine.value.trim()
       if (!username) throw new Error('Username is required')
     }
 
-    const connectConfig: ConnectConfig & { compress?: boolean } = {
-      host: config.host,
-      port: config.port,
-      username,
-      readyTimeout: 30000,
-      tryKeyboard: true,
-      compress: config.compression !== false,
-      ...(config.x11Forwarding !== false ? { x11: true } : {}),
-      ...(config.authMethod === 'agent'
-        ? {
-            agent:
-              process.env.SSH_AUTH_SOCK ||
-              (process.platform === 'win32' ? 'pageant' : undefined)
-          }
-        : {})
-    }
+    let password: string | undefined
+    let privateKey: Buffer | undefined
+    let passphrase: string | undefined
+    /** True when first attempt used a stored secret (may need re-prompt on failure) */
+    let usedStoredPassword = false
+
+    live.authPasswordPlain = null
+    live.authPasswordFromStore = false
+    live.lastAuthUsername = username
 
     if (config.authMethod === 'password') {
-      let password = options.password ?? getSecret(config.id) ?? ''
-      if (!password) {
-        password = await live.auth.ask(`${username}@${config.host}'s password: `, false, write)
+      const stored = getPassword(config.id, username)
+      password = options.password ?? stored ?? undefined
+      if (password && stored && password === stored && !options.password) {
+        usedStoredPassword = true
+        live.authPasswordFromStore = true
+      } else if (!password) {
+        const passLine = await live.auth.ask(
+          `${username}@${config.host}'s password: `,
+          false,
+          write
+        )
+        if (passLine.cancelled) throw new Error('Authentication cancelled')
+        password = passLine.value
+        live.authPasswordPlain = password
+        live.authPasswordFromStore = false
+      } else {
+        // Typed via options or differs from store — treat as new plain for save offer
+        live.authPasswordPlain = password
+        live.authPasswordFromStore = Boolean(stored && password === stored)
       }
-      if (password) connectConfig.password = password
     } else if (config.authMethod === 'privateKey') {
       if (!config.privateKeyPath) throw new Error('Private key path required')
       try {
-        connectConfig.privateKey = readFileSync(config.privateKeyPath)
+        privateKey = readFileSync(config.privateKeyPath)
       } catch {
         throw new Error(`Cannot read private key: ${config.privateKeyPath}`)
       }
-      const passphrase = options.passphrase ?? getSecret(`${config.id}:passphrase`)
-      if (passphrase) connectConfig.passphrase = passphrase
+      passphrase = options.passphrase ?? getPassphrase(config.id) ?? undefined
     }
 
-    const client = live.client
+    const MAX_PASSWORD_ATTEMPTS = 5
+    let lastAuthError: Error | null = null
 
-    client.on('keyboard-interactive', (name, instructions, _lang, prompts, finish) => {
-      void (async () => {
-        if (name) write(`${name}\r\n`)
-        if (instructions) write(`${instructions}\r\n`)
-        const answers: string[] = []
-        for (const p of prompts) {
-          const echo = p.echo !== false
-          const ans = await live.auth.ask(p.prompt, echo, write)
-          answers.push(ans)
+    for (let attempt = 0; attempt < MAX_PASSWORD_ATTEMPTS; attempt++) {
+      if (attempt > 0) {
+        if (config.authMethod !== 'password') {
+          throw lastAuthError ?? new Error('Authentication failed')
         }
-        finish(answers)
-      })()
-    })
+        write('\x1b[31mAccess denied\x1b[0m\r\n')
+        // Drop the dead Client before prompting so socket close noise cannot
+        // race with the new password line (especially after stored-password fail).
+        this.replaceClient(live)
 
-    await new Promise<void>((resolve, reject) => {
-      const onReady = (): void => {
-        cleanup()
-        resolve()
+        const passLine = await live.auth.ask(
+          `${username}@${config.host}'s password: `,
+          false,
+          write
+        )
+        // Only Ctrl+C cancels — empty Enter is a valid (empty) password attempt
+        if (passLine.cancelled) throw new Error('Authentication cancelled')
+        password = passLine.value
+        usedStoredPassword = false
+        live.authPasswordPlain = password
+        live.authPasswordFromStore = false
       }
-      const onError = (err: Error): void => {
-        cleanup()
-        reject(err)
-      }
-      const cleanup = (): void => {
-        client.off('ready', onReady)
-        client.off('error', onError)
-      }
-      client.once('ready', onReady)
-      client.once('error', onError)
-      client.connect(connectConfig)
-    })
 
-    write('\x1b[90mAuthenticated. Opening shell…\x1b[0m\r\n')
+      const settings = getSettings()
+      const keepAliveMs =
+        settings.keepAliveIntervalSec > 0 ? settings.keepAliveIntervalSec * 1000 : 0
+
+      const connectConfig: ConnectConfig & { compress?: boolean } = {
+        host: config.host,
+        port: config.port,
+        username,
+        readyTimeout: 30000,
+        tryKeyboard: true,
+        compress: config.compression !== false,
+        keepaliveInterval: keepAliveMs,
+        keepaliveCountMax: keepAliveMs > 0 ? 3 : 0,
+        hostHash: 'sha256',
+        hostVerifier: (keyHash: string) =>
+          this.verifyHostKey(config.host, config.port, keyHash, settings.hostKeyPolicy),
+        ...(config.x11Forwarding !== false ? { x11: true } : {}),
+        ...(config.authMethod === 'agent'
+          ? {
+              agent:
+                process.env.SSH_AUTH_SOCK ||
+                (process.platform === 'win32' ? 'pageant' : undefined)
+            }
+          : {}),
+        // Always send password string when using password auth (including empty)
+        ...(config.authMethod === 'password' ? { password: password ?? '' } : {}),
+        ...(config.authMethod === 'privateKey' && privateKey
+          ? { privateKey, ...(passphrase ? { passphrase } : {}) }
+          : {})
+      }
+
+      const client = live.client
+
+      client.on('keyboard-interactive', (name, instructions, _lang, prompts, finish) => {
+        void (async () => {
+          try {
+            if (name) write(`${name}\r\n`)
+            if (instructions) write(`${instructions}\r\n`)
+            const answers: string[] = []
+            for (const p of prompts) {
+              const echo = p.echo !== false
+              const line = await live.auth.ask(p.prompt, echo, write)
+              answers.push(line.cancelled ? '' : line.value)
+            }
+            finish(answers)
+          } catch {
+            finish([])
+          }
+        })()
+      })
+
+      try {
+        await this.waitClientReady(live, client, connectConfig)
+        lastAuthError = null
+        break
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err))
+        // Stored/wrong password → retry with interactive prompt (not connection cancel)
+        if (
+          config.authMethod === 'password' &&
+          isAuthFailure(e) &&
+          attempt < MAX_PASSWORD_ATTEMPTS - 1
+        ) {
+          lastAuthError = e
+          // If first try used stored secret, force interactive path next
+          if (usedStoredPassword) usedStoredPassword = false
+          continue
+        }
+        throw e
+      }
+    }
+
+    if (lastAuthError) throw lastAuthError
+
+    const client = live.client
+    write('\x1b[90mAuthenticated.\x1b[0m\r\n')
+
+    // Password save prompt BEFORE shell (Moba-style) when policy asks
+    await this.maybePromptPasswordSave(live, config.id, username, config.host)
+
+    write('\x1b[90mOpening shell…\x1b[0m\r\n')
+
+    const termType: TermType =
+      config.termType || getSettings().defaultTermType || 'xterm-256color'
+    // Prefer a generous default PTY size; renderer will resize ASAP.
+    // Too-small PTY cols make bash history redraw erase scrollback lines.
+    const pty = { term: termType, cols: 120, rows: 40 }
+
+    /*
+     * CRITICAL order: interactive shell FIRST, before SFTP/exec channels.
+     * Opening SFTP or exec before shell can suppress/partial-print pam MOTD
+     * ("Welcome to Ubuntu…") so only "Last login:" remains.
+     * Attach data handlers inside the shell callback so MOTD bytes are not dropped.
+     */
+    live.phase = 'shell'
+    live.oscBuf = ''
+    live.lastStreamAt = Date.now()
+    live.streamBytes = 0
 
     const stream = await new Promise<ClientChannel>((resolve, reject) => {
-      client.shell({ term: 'xterm-256color' }, (err, s) => {
-        if (err) reject(err)
-        else resolve(s)
+      client.shell(pty, (err, s) => {
+        if (err || !s) {
+          reject(err ?? new Error('Failed to open shell'))
+          return
+        }
+        live.stream = s
+        s.on('data', (data: Buffer) => this.onStreamData(live, data))
+        s.stderr?.on('data', (data: Buffer) => this.onStreamData(live, data))
+        s.on('close', () => {
+          if (!this.sessions.has(live.info.id)) return
+          if (live.phase !== 'shell') return
+          this.writeSessionEndedHints(live)
+          this.setStatus(live, 'disconnected')
+          this.cleanup(live.info.id, false)
+        })
+        s.on('error', () => {
+          /* avoid uncaught stream errors */
+        })
+        resolve(s)
       })
     })
 
     live.stream = stream
-    stream.on('data', (data: Buffer) => this.onStreamData(live, data))
-    stream.stderr?.on('data', (data: Buffer) => this.onStreamData(live, data))
-    stream.on('close', () => {
-      live.batcher.dispose()
-      this.setStatus(live, 'disconnected')
-      this.cleanup(live.info.id, false)
-    })
-
-    client.on('error', (err) => {
-      this.setStatus(live, 'error', err.message)
-    })
-    client.on('close', () => {
-      if (this.sessions.has(live.info.id)) {
-        this.setStatus(live, 'disconnected')
-        this.cleanup(live.info.id, false)
-      }
-    })
-
-    try {
-      live.sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
-        client.sftp((err, sftp) => (err ? reject(err) : resolve(sftp)))
-      })
-    } catch {
-      /* SFTP optional */
-    }
-
-    // Enable OSC 7 cwd reporting for follow-folder (best-effort)
-    stream.write(
-      `export PROMPT_COMMAND='printf "\\033]7;%s\\007" "$(pwd)"; '"\${PROMPT_COMMAND:-}"\n` +
-        `printf "\\033]7;%s\\007" "$(pwd)"\n`
-    )
 
     touchLastConnected(config.id)
     this.setStatus(live, 'connected')
     this.maybeStartMetrics(live)
+
+    // SFTP + shell integration only AFTER MOTD has been free to arrive
+    void this.afterLoginShellReady(live, config)
   }
 
-  private onStreamData(live: LiveSession, data: Buffer): void {
-    // Parse OSC 7 for remote cwd without fully stripping (xterm ignores unknown OSC mostly)
-    live.oscBuf += data.toString('utf8')
-    if (live.oscBuf.length > 8192) live.oscBuf = live.oscBuf.slice(-4096)
+  /**
+   * After the login shell is up: wait for MOTD to finish, then SFTP + SI + startup.
+   */
+  private async afterLoginShellReady(
+    live: LiveSession,
+    config: { startupDirectory?: string; startupCommand?: string }
+  ): Promise<void> {
+    // Let Welcome / update-motd finish (may take seconds after Last login)
+    await this.waitForStreamQuiet(live, {
+      quietMs: 800,
+      minWaitMs: 500,
+      maxWaitMs: 12000,
+      requireData: true
+    })
+    if (live.phase !== 'shell' || !live.stream) return
 
-    let match: RegExpExecArray | null
-    OSC7_RE.lastIndex = 0
-    while ((match = OSC7_RE.exec(live.oscBuf)) !== null) {
-      const raw = match[1]
-      // formats: file://host/path  or just /path
-      let cwd = raw
-      try {
-        if (raw.startsWith('file://')) {
-          const u = new URL(raw)
-          cwd = decodeURIComponent(u.pathname)
-          // Windows-style path from URL may start with /C:/
-          if (/^\/[A-Za-z]:\//.test(cwd)) cwd = cwd.slice(1)
-        }
-      } catch {
-        /* keep raw */
+    // SFTP for file browser + staging SI scripts (safe after MOTD)
+    try {
+      if (!live.sftp) {
+        live.sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
+          live.client.sftp((err, sftp) => (err ? reject(err) : resolve(sftp)))
+        })
       }
-      if (cwd && cwd !== live.info.remoteCwd) {
-        live.info = { ...live.info, remoteCwd: cwd }
-        this.getWindow()?.webContents.send('ssh:cwd', live.info.id, cwd)
+    } catch {
+      /* SFTP optional */
+    }
+
+    try {
+      if (live.sftp) {
+        const home = await new Promise<string>((resolve) => {
+          live.sftp!.realpath('.', (err, p) => resolve(!err && p ? p : '/'))
+        })
+        if (home) {
+          live.info = { ...live.info, remoteCwd: home }
+          this.getWindow()?.webContents.send('ssh:cwd', live.info.id, home)
+        }
+      }
+    } catch {
+      /* optional */
+    }
+
+    const shellInfo = await this.detectRemoteShell(live)
+    const sourceCmd = await this.stageShellIntegrationFiles(live, shellInfo)
+
+    if (live.phase !== 'shell' || !live.stream) return
+
+    if (sourceCmd) {
+      // Filter only inject echo lines — never mute the whole stream
+      live.siEchoFilterUntil = Date.now() + 2000
+      try {
+        live.stream.write(this.encodeRemote(live, sourceCmd))
+        live.shellIntegrationReady = true
+      } catch {
+        live.siEchoFilterUntil = undefined
+      }
+      await new Promise((r) => setTimeout(r, 100))
+    }
+
+    if (live.phase !== 'shell' || !live.stream) return
+
+    const startupDir = (config.startupDirectory || '').trim()
+    const startupCmd = (config.startupCommand || '').trim()
+    if (startupDir) {
+      const escaped = startupDir.replace(/'/g, `'\\''`)
+      live.stream.write(this.encodeRemote(live, `cd '${escaped}'\n`))
+    }
+    if (startupCmd) {
+      live.stream.write(this.encodeRemote(live, `${startupCmd}\n`))
+    }
+  }
+
+  /**
+   * Resolve when outbound stream has been quiet for quietMs.
+   * If requireData, do not resolve until at least one byte was received
+   * (avoids injecting before MOTD starts).
+   */
+  private waitForStreamQuiet(
+    live: LiveSession,
+    opts: {
+      quietMs: number
+      minWaitMs: number
+      maxWaitMs: number
+      requireData?: boolean
+    }
+  ): Promise<void> {
+    const started = Date.now()
+    return new Promise((resolve) => {
+      const tick = (): void => {
+        if (live.phase !== 'shell') {
+          resolve()
+          return
+        }
+        const elapsed = Date.now() - started
+        if (elapsed >= opts.maxWaitMs) {
+          resolve()
+          return
+        }
+        const gotData = (live.streamBytes ?? 0) > 0
+        if (opts.requireData && !gotData) {
+          setTimeout(tick, 40)
+          return
+        }
+        const last = live.lastStreamAt ?? started
+        const quietFor = Date.now() - last
+        if (elapsed >= opts.minWaitMs && quietFor >= opts.quietMs) {
+          resolve()
+          return
+        }
+        setTimeout(tick, 40)
+      }
+      setTimeout(tick, 40)
+    })
+  }
+
+  /** Detect remote login shell path via a short non-interactive exec. */
+  private async detectRemoteShell(live: LiveSession): Promise<RemoteShellInfo> {
+    return new Promise((resolve) => {
+      let settled = false
+      const done = (info: RemoteShellInfo): void => {
+        if (settled) return
+        settled = true
+        resolve(info)
+      }
+      try {
+        live.client.exec('printf %s "${SHELL:-}"', (err, ch) => {
+          if (err || !ch) {
+            done({ kind: 'unknown', path: '' })
+            return
+          }
+          let out = ''
+          const finish = (): void => {
+            const path = out.trim()
+            done({ kind: shellKindFromPath(path), path })
+          }
+          ch.on('data', (d: Buffer) => {
+            out += d.toString('utf8')
+          })
+          ch.stderr?.on('data', () => {
+            /* ignore */
+          })
+          ch.on('close', finish)
+          ch.on('end', finish)
+          setTimeout(finish, 3000)
+        })
+      } catch {
+        done({ kind: 'unknown', path: '' })
+      }
+    })
+  }
+
+  private writeSftpText(sftp: SFTPWrapper, remotePath: string, text: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const ws = sftp.createWriteStream(remotePath)
+      ws.on('error', reject)
+      ws.on('close', () => resolve())
+      ws.end(Buffer.from(text, 'utf8'))
+    })
+  }
+
+  /** Upload SI scripts; return PTY source command or null. */
+  private async stageShellIntegrationFiles(
+    live: LiveSession,
+    shellInfo: RemoteShellInfo
+  ): Promise<string | null> {
+    if (!live.sftp) return null
+    const paths = remoteIntegrationPaths(live.info.id)
+    try {
+      await this.writeSftpText(live.sftp, paths.sh, BASH_ZSH_INTEGRATION)
+      await this.writeSftpText(live.sftp, paths.fish, FISH_INTEGRATION)
+      return buildSourceCommand(shellInfo.kind, paths.sh, paths.fish)
+    } catch {
+      return null
+    }
+  }
+
+  private verifyHostKey(
+    host: string,
+    port: number,
+    keyHash: string,
+    policy: ReturnType<typeof getSettings>['hostKeyPolicy']
+  ): boolean {
+    if (policy === 'ignore') return true
+    const known = getKnownHostKey(host, port)
+    if (!known) {
+      if (policy === 'strict') return false
+      // accept-new
+      setKnownHostKey(host, port, keyHash)
+      return true
+    }
+    return known === keyHash
+  }
+
+  /**
+   * After auth success, before shell: optional password-save UI.
+   */
+  private async maybePromptPasswordSave(
+    live: LiveSession,
+    sessionConfigId: string,
+    username: string,
+    host: string
+  ): Promise<void> {
+    const config = getSession(sessionConfigId)
+    if (!config || config.authMethod !== 'password') return
+    const user = username.trim()
+    if (!user) return
+
+    const policy = config.passwordSavePolicy ?? 'ask'
+    const plain = live.authPasswordPlain
+    const fromStore = live.authPasswordFromStore
+    const alreadyStored = hasPassword(sessionConfigId, user)
+
+    if (policy === 'never') return
+
+    if (policy === 'always') {
+      // Save password used this session if we have a plain value
+      const toSave = plain ?? (fromStore ? getPassword(sessionConfigId, user) : null)
+      if (toSave) setPassword(sessionConfigId, user, toSave)
+      return
+    }
+
+    // ask: only if not already stored for this account and we have a newly entered password
+    if (alreadyStored || fromStore || !plain) return
+
+    const win = this.getWindow()
+    if (!win) {
+      // No UI — skip save
+      return
+    }
+
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(() => {
+        if (live.passwordSaveWaiter) {
+          live.passwordSaveWaiter = null
+          resolve()
+        }
+      }, 120000)
+      live.passwordSaveWaiter = {
+        resolve: () => {
+          clearTimeout(t)
+          resolve()
+        }
+      }
+      win.webContents.send('ssh:askPasswordSave', {
+        activeSessionId: live.info.id,
+        sessionConfigId,
+        username: user,
+        host
+      })
+    })
+  }
+
+  /**
+   * Renderer answer to password-save dialog.
+   * save: Yes; dontAskAgain: checkbox "do not show again"
+   */
+  answerPasswordSave(
+    activeSessionId: string,
+    save: boolean,
+    dontAskAgain: boolean
+  ): void {
+    const live = this.sessions.get(activeSessionId)
+    if (!live) return
+
+    const config = getSession(live.info.sessionConfigId)
+    const username = live.lastAuthUsername
+
+    if (config && username) {
+      if (dontAskAgain) {
+        updatePasswordSavePolicy(config.id, save ? 'always' : 'never')
+      }
+      if (save && live.authPasswordPlain) {
+        setPassword(config.id, username, live.authPasswordPlain)
       }
     }
-    // trim processed portion loosely
-    const last = live.oscBuf.lastIndexOf('\x1b]7;')
-    if (last > 0) live.oscBuf = live.oscBuf.slice(last)
 
-    live.batcher.push(data)
+    const w = live.passwordSaveWaiter
+    live.passwordSaveWaiter = null
+    w?.resolve()
+  }
+
+  /** Publish shell CWD from shell-integration OSC only (no cd inference). */
+  private publishCwd(live: LiveSession, cwd: string): void {
+    if (!cwd || cwd === live.info.remoteCwd) return
+    live.info = { ...live.info, remoteCwd: cwd }
+    this.getWindow()?.webContents.send('ssh:cwd', live.info.id, cwd)
+  }
+
+  /**
+   * Stream path: passive shell-integration CWD detection.
+   * Supports OSC 633 (VS Code), OSC 7 (file://), OSC 1337 (iTerm2).
+   * Never injects shell hooks or parses typed cd commands.
+   */
+  private onStreamData(live: LiveSession, data: Buffer): void {
+    const decoded = this.decodeRemote(live, data)
+    const asText = decoded.toString('utf8')
+    live.lastStreamAt = Date.now()
+    live.streamBytes = (live.streamBytes ?? 0) + decoded.length
+    live.oscBuf += asText
+    if (live.oscBuf.length > 16384) live.oscBuf = live.oscBuf.slice(-8192)
+
+    const { hits, remainder } = extractCwdsFromOscBuffer(live.oscBuf)
+    live.oscBuf = remainder
+    // Use the last path in this chunk (latest prompt wins)
+    if (hits.length > 0) {
+      const last = hits[hits.length - 1]!
+      this.publishCwd(live, last.path)
+    }
+
+    // Only strip the one-shot SI inject line(s); never blank the whole window
+    if (live.siEchoFilterUntil && Date.now() < live.siEchoFilterUntil) {
+      const filtered = filterShellIntegrationEcho(asText)
+      if (filtered.length > 0) {
+        live.batcher.push(Buffer.from(filtered, 'utf8'))
+      }
+      return
+    }
+    live.siEchoFilterUntil = undefined
+
+    live.batcher.push(decoded)
   }
 
   write(activeSessionId: string, data: string): void {
     const live = this.sessions.get(activeSessionId)
     if (!live) return
-    // During auth prompts, accept both DEL and BS as backspace (no mapping)
+    // Password / login prompts — always consume (do not require shell)
     if (live.auth.active) {
       live.auth.feed(data, (s) => this.termWrite(live, s))
       return
     }
-    if (!live.stream || live.info.status === 'error') return
-    if (live.info.status === 'connecting' && !live.stream) {
-      live.auth.feed(data, (s) => this.termWrite(live, s))
-      return
-    }
+    if (live.phase !== 'shell' || !live.stream) return
     let payload = data
     if (live.backspaceSendsCtrlH) {
       // Map DEL (0x7f) → BS (^H, 0x08) for hosts that expect it
       payload = payload.replace(/\x7f/g, '\x08')
     }
-    live.stream?.write(payload)
+    live.stream.write(this.encodeRemote(live, payload))
   }
 
   resize(activeSessionId: string, cols: number, rows: number): void {
     const live = this.sessions.get(activeSessionId)
-    if (!live?.stream || live.info.status !== 'connected') return
+    if (!live?.stream) return
+    if (live.info.status !== 'connected' && live.phase !== 'shell') return
+    if (cols < 20 || rows < 5) return
     live.stream.setWindow(rows, cols, 0, 0)
   }
 
@@ -351,9 +1001,37 @@ export class SshManager {
     this.cleanup(activeSessionId)
   }
 
+  /** Close sockets only; keep LiveSession for error UI / restart until disconnectSession. */
+  private teardownClient(live: LiveSession): void {
+    live.connectWaiter = null
+    live.phase = live.phase === 'shell' ? 'ended' : live.phase === 'auth' ? 'ended' : live.phase
+    if (live.metricsTimer) {
+      clearInterval(live.metricsTimer)
+      live.metricsTimer = undefined
+    }
+    try {
+      live.stream?.close()
+    } catch {
+      /* ignore */
+    }
+    live.stream = undefined
+    live.sftp = undefined
+    // Bump gen so late socket events are ignored
+    live.clientGen += 1
+    try {
+      live.client.end()
+    } catch {
+      /* ignore */
+    }
+  }
+
   private cleanup(activeSessionId: string, endClient = true): void {
     const live = this.sessions.get(activeSessionId)
     if (!live) return
+    // Remove first so late error/close handlers no-op
+    this.sessions.delete(activeSessionId)
+    live.connectWaiter = null
+    live.phase = 'ended'
     if (live.metricsTimer) clearInterval(live.metricsTimer)
     live.batcher.dispose()
     try {
@@ -362,13 +1040,13 @@ export class SshManager {
       /* ignore */
     }
     if (endClient) {
+      live.clientGen += 1
       try {
         live.client.end()
       } catch {
         /* ignore */
       }
     }
-    this.sessions.delete(activeSessionId)
   }
 
   private getLive(activeSessionId: string): LiveSession {
@@ -777,8 +1455,50 @@ export class SshManager {
   }
 }
 
+/** Drop visible echo of our one-shot SI inject; keep prompts and other output. */
+function filterShellIntegrationEcho(text: string): string {
+  const parts = text.split(/(\r\n|\n|\r)/)
+  let out = ''
+  for (const p of parts) {
+    if (p === '\n' || p === '\r' || p === '\r\n') {
+      out += p
+      continue
+    }
+    if (
+      /\.vexo-si-/i.test(p) ||
+      /stty\s+-echo/i.test(p) ||
+      /stty\s+echo/i.test(p) ||
+      /set\s+\+o\s+history/i.test(p) ||
+      /set\s+-o\s+history/i.test(p) ||
+      /^\s*\.\s+\/tmp\//i.test(p) ||
+      /source\s+\/tmp\/\.vexo/i.test(p)
+    ) {
+      continue
+    }
+    out += p
+  }
+  return out
+}
+
 function formatRate(bytesPerSec: number): string {
   if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)}B/s`
   if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)}KB/s`
   return `${(bytesPerSec / 1024 / 1024).toFixed(1)}MB/s`
 }
+
+/** True when the failure is wrong password / auth rejected (retryable). */
+function isAuthFailure(err: Error): boolean {
+  const level = (err as Error & { level?: string }).level
+  if (level === 'client-authentication') return true
+  const msg = err.message || ''
+  return (
+    /all configured authentication methods failed/i.test(msg) ||
+    /authentication failed/i.test(msg) ||
+    /permission denied/i.test(msg) ||
+    /access denied/i.test(msg) ||
+    // ssh2 may emit close before the auth-failure error; treat as retryable
+    /connection closed before ready/i.test(msg)
+  )
+}
+
+
