@@ -20,7 +20,7 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
     "build:linux": "electron-vite build && electron-builder --linux",
-    "icons": "electron-icon-builder --input=./icon.png --output=./build --flatten && node -e \"const fs=require('fs');const p=require('path');const cp=(a,b)=>fs.copyFileSync(a,b);const b='build';const i=p.join(b,'icons');cp(p.join(i,'icon.ico'),p.join(b,'icon.ico'));cp(p.join(i,'icon.icns'),p.join(b,'icon.icns'));cp(p.join(i,'512x512.png'),p.join(b,'icon.png'));cp(p.join(i,'512x512.png'),p.join('resources','icon.png'));console.log('icons installed to build/ and resources/')\""
+    "icons": "electron-icon-builder --input=./resources/icon.png --output=./build --flatten && node -e \"const fs=require('fs');const p=require('path');const cp=(a,b)=>fs.copyFileSync(a,b);const b='build';const i=p.join(b,'icons');cp(p.join(i,'icon.ico'),p.join(b,'icon.ico'));cp(p.join(i,'icon.icns'),p.join(b,'icon.icns'));cp(p.join(i,'512x512.png'),p.join(b,'icon.png'));cp(p.join(i,'512x512.png'),p.join('resources','icon.png'));console.log('icons installed to build/ and resources/')\""
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
