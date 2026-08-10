@@ -1,16 +1,10 @@
 # Vexo
 
-SSH client desktop app (Electron + React + TypeScript) with multi-session terminals and integrated SFTP.
-
-Inspired by MobaXTerm / Termius — focused MVP: save sessions, connect, terminal tabs, SFTP upload/download on the same connection.
+Electron SSH client: saved sessions, multi-tab/split terminals, SFTP on the same connection, broadcast input.
 
 ## Stack
 
-- Electron + Vite + React + TypeScript ([electron-vite](https://electron-vite.org/))
-- [xterm.js](https://xtermjs.org/) + WebGL / fit / search addons
-- [ssh2](https://github.com/mscdex/ssh2) for SSH + SFTP
-- Zustand for UI state
-- electron-store + Electron `safeStorage` for session metadata and encrypted credentials
+Electron · React · TypeScript (electron-vite) · xterm.js · ssh2 · Zustand · electron-store + safeStorage
 
 ## Develop
 
@@ -19,16 +13,21 @@ npm install
 npm run dev
 ```
 
-## Scripts
-
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start app with HMR |
+| `npm run dev` | App with HMR |
+| `npm run typecheck` | TypeScript |
 | `npm run build` | Typecheck + production build |
-| `npm run build:win` | Windows installer via electron-builder |
+| `npm run build:win` | Windows installer |
+| `npm run icons` | Generate icons from `resources/icon.png` |
 
-## Security
+## AI / contributors
 
-- `nodeIntegration: false`, `contextIsolation: true`
-- Preload exposes a narrow `window.api` surface only
-- Passwords/passphrases encrypted with OS `safeStorage` (never plain JSON)
+- **`AGENTS.md`** — task routing for coding agents (read first).
+- **`docs/`** — overview, architecture, conventions, decisions, domains.
+
+## Security (short)
+
+- `contextIsolation`, no Node in renderer; API via preload only.
+- Passwords/passphrases via OS `safeStorage`, not plain JSON.
+- Optional encrypted session export (password required; loss = unrecoverable).
