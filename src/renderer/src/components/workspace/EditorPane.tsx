@@ -6,7 +6,7 @@ import { useSettingsStore } from '../../stores/settingsStore'
 import { TerminalView } from '../TerminalView'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { DropOverlay, zoneFromPoint } from './DropOverlay'
-import { SESSION_CONFIG_MIME, TAB_MIME } from '../../layout/dnd'
+import { isWorkspaceDrag, SESSION_CONFIG_MIME, TAB_MIME } from '../../layout/dnd'
 
 interface Props {
   leaf: Extract<LayoutNode, { type: 'leaf' }>
@@ -148,7 +148,29 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
         if (leaf.activeTabId) setLeafActive(leaf.id, leaf.activeTabId)
       }}
     >
-      <div className="tab-bar">
+      <div
+        className="tab-bar"
+        onDragOver={(e) => {
+          if (!isWorkspaceDrag(e)) return
+          e.preventDefault()
+          e.stopPropagation()
+          const fromSidebar = [...e.dataTransfer.types].includes(SESSION_CONFIG_MIME)
+          e.dataTransfer.dropEffect = fromSidebar ? 'copy' : 'move'
+        }}
+        onDrop={(e) => {
+          if (!isWorkspaceDrag(e)) return
+          e.preventDefault()
+          e.stopPropagation()
+          // Drop on tab strip → open/move as a tab in this pane (no split)
+          const configId = e.dataTransfer.getData(SESSION_CONFIG_MIME)
+          if (configId) {
+            void connectSession(configId, { leafId: leaf.id, zone: 'center' })
+            return
+          }
+          const tabId = e.dataTransfer.getData(TAB_MIME)
+          if (tabId) dropTab(tabId, leaf.id, 'center')
+        }}
+      >
         <div className="tab-bar-scroll" ref={tabScrollRef}>
           {paneSessions.map((s) => (
             <div
@@ -229,6 +251,11 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
         className="editor-pane-body"
         ref={bodyRef}
         onDragOver={(e) => {
+          // Ignore SFTP remote-file drags (and anything else that is not tab/session)
+          if (!isWorkspaceDrag(e)) {
+            setDropZone(null)
+            return
+          }
           e.preventDefault()
           const types = [...e.dataTransfer.types]
           const fromSidebar = types.includes(SESSION_CONFIG_MIME)
@@ -243,6 +270,10 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
           }
         }}
         onDrop={(e) => {
+          if (!isWorkspaceDrag(e)) {
+            setDropZone(null)
+            return
+          }
           e.preventDefault()
           e.stopPropagation()
           const zone = bodyRef.current
