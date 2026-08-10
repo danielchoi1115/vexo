@@ -15,12 +15,19 @@ win:
   executableName: Vexo
   icon: build/icon.ico
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  # Guided installer (not one-click): path + install mode pages
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  perMachine: false
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
-  createDesktopShortcut: always
+  artifactName: ${name}-${version}-setup.${ext}
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
 mac:
   icon: build/icon.icns
   entitlementsInherit: build/entitlements.mac.plist
