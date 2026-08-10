@@ -53,6 +53,30 @@ function normalizePasteText(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 }
 
+/** Below this, paste is one IPC write; longer text is chunked to avoid PTY/prompt desync. */
+const PASTE_CHUNK_CHARS = 512
+const PASTE_CHUNK_GAP_MS = 8
+
+/**
+ * Paste into the remote PTY: normalize newlines, then write in chunks with a short gap
+ * so long pastes do not overwrite the prompt (hostname) redraw.
+ */
+async function pasteToSession(sessionId: string, raw: string): Promise<void> {
+  const text = normalizePasteText(raw)
+  if (!text) return
+  if (text.length <= PASTE_CHUNK_CHARS) {
+    await window.api.ssh.write(sessionId, text)
+    return
+  }
+  for (let i = 0; i < text.length; i += PASTE_CHUNK_CHARS) {
+    if (!cache.has(sessionId)) return
+    await window.api.ssh.write(sessionId, text.slice(i, i + PASTE_CHUNK_CHARS))
+    if (i + PASTE_CHUNK_CHARS < text.length) {
+      await new Promise<void>((r) => setTimeout(r, PASTE_CHUNK_GAP_MS))
+    }
+  }
+}
+
 function decodeB64(b64: string): string {
   const text = atob(b64)
   const bytes = new Uint8Array(text.length)
@@ -347,7 +371,7 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     e.stopPropagation()
     if (useSettingsStore.getState().copyOnSelect) return
     const text = e.clipboardData?.getData('text/plain')
-    if (text) void window.api.ssh.write(sessionId, normalizePasteText(text))
+    if (text) void pasteToSession(sessionId, text)
   }
   hostEl.addEventListener('paste', onPaste)
 
@@ -369,7 +393,7 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     if (!useSettingsStore.getState().pasteOnRightClick) return
     e.preventDefault()
     void navigator.clipboard.readText().then((text) => {
-      if (text) void window.api.ssh.write(sessionId, normalizePasteText(text))
+      if (text) void pasteToSession(sessionId, text)
     })
   }
   hostEl.addEventListener('contextmenu', onContext)
