@@ -11,6 +11,8 @@ export interface CachedTerminal {
   fit: FitAddon
   hostEl: HTMLDivElement
   focused: boolean
+  /** At least one successful fit→ssh.resize was sent for this terminal */
+  ptySizePushed: boolean
   dispose: () => void
 }
 
@@ -44,6 +46,11 @@ function getPark(): HTMLDivElement {
     document.body.appendChild(park)
   }
   return park
+}
+
+/** Windows clipboard often uses CRLF; bare CR+LF both act as Enter on many shells. */
+function normalizePasteText(text: string): string {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
 }
 
 function decodeB64(b64: string): string {
@@ -148,12 +155,12 @@ function fitAndResize(entry: CachedTerminal): boolean {
       return false
     }
 
-    // Skip no-op resizes: thrashing reflow eats scrollback lines (↑ history symptom)
-    if (cols === prevCols && rows === prevRows) {
-      return true
+    // Always push size to main (main dedupes). Early resizes are queued until
+    // the shell stream exists — skipping the IPC left PTY at 120×40 and broke vim.
+    if (cols !== prevCols || rows !== prevRows || !entry.ptySizePushed) {
+      void window.api.ssh.resize(entry.sessionId, cols, rows)
+      entry.ptySizePushed = true
     }
-
-    void window.api.ssh.resize(entry.sessionId, cols, rows)
     return true
   } catch {
     return false
@@ -340,7 +347,7 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     e.stopPropagation()
     if (useSettingsStore.getState().copyOnSelect) return
     const text = e.clipboardData?.getData('text/plain')
-    if (text) void window.api.ssh.write(sessionId, text)
+    if (text) void window.api.ssh.write(sessionId, normalizePasteText(text))
   }
   hostEl.addEventListener('paste', onPaste)
 
@@ -362,7 +369,7 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     if (!useSettingsStore.getState().pasteOnRightClick) return
     e.preventDefault()
     void navigator.clipboard.readText().then((text) => {
-      if (text) void window.api.ssh.write(sessionId, text)
+      if (text) void window.api.ssh.write(sessionId, normalizePasteText(text))
     })
   }
   hostEl.addEventListener('contextmenu', onContext)
@@ -385,6 +392,7 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     fit,
     hostEl,
     focused: false,
+    ptySizePushed: false,
     dispose
   }
   cache.set(sessionId, entry)
@@ -400,6 +408,12 @@ export function attachTerminal(sessionId: string, container: HTMLElement, focuse
   entry.focused = focused
   // Wait for layout (split/pane move) so we never fit to a collapsed width
   scheduleFitWhenReady(entry)
+  // Second pass after layout paints — catches late pane height (vi first-open)
+  window.setTimeout(() => {
+    if (cache.get(sessionId) !== entry) return
+    entry.ptySizePushed = false
+    scheduleFitWhenReady(entry, 8)
+  }, 120)
   if (entry.focused) {
     requestAnimationFrame(() => {
       try {
