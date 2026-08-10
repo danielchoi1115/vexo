@@ -228,8 +228,12 @@ export function reorder(payload: TreeReorderPayload): void {
     const folders = [...store.get('folders')].sort((a, b) => a.order - b.order)
     const from = folders.findIndex((f) => f.id === dragId)
     if (from < 0) return
+    // targetIndex = insert-before index in the pre-remove list
+    if (from === targetIndex || from + 1 === targetIndex) return
     const [item] = folders.splice(from, 1)
-    const to = Math.max(0, Math.min(targetIndex, folders.length))
+    let to = Math.max(0, Math.min(targetIndex, folders.length + 1))
+    if (from < to) to -= 1
+    to = Math.max(0, Math.min(to, folders.length))
     folders.splice(to, 0, item)
     store.set(
       'folders',
@@ -242,17 +246,30 @@ export function reorder(payload: TreeReorderPayload): void {
   const drag = sessions.find((s) => s.id === dragId)
   if (!drag) return
 
+  const destFolderId = targetFolderId === undefined ? null : targetFolderId
+  const sameFolder = (drag.folderId ?? null) === destFolderId
+
+  // Pre-remove index among destination siblings (for same-list moves)
+  const destBefore = sessions
+    .filter((s) => (s.folderId ?? null) === destFolderId)
+    .sort((a, b) => a.order - b.order)
+  const from = sameFolder ? destBefore.findIndex((s) => s.id === dragId) : -1
+  if (from >= 0 && (from === targetIndex || from + 1 === targetIndex)) return
+
   // Remove from list conceptually and reinsert into target folder siblings
   const others = sessions.filter((s) => s.id !== dragId)
   const siblings = others
-    .filter((s) => (s.folderId ?? null) === (targetFolderId ?? null))
+    .filter((s) => (s.folderId ?? null) === destFolderId)
     .sort((a, b) => a.order - b.order)
 
   const moved: SessionConfig = {
     ...drag,
-    folderId: targetFolderId === undefined ? null : targetFolderId
+    folderId: destFolderId
   }
-  const idx = Math.max(0, Math.min(targetIndex, siblings.length))
+  let idx = Math.max(0, Math.min(targetIndex, siblings.length))
+  // Drop target index was computed on the pre-remove list
+  if (from >= 0 && from < targetIndex) idx = Math.max(0, targetIndex - 1)
+  idx = Math.max(0, Math.min(idx, siblings.length))
   siblings.splice(idx, 0, moved)
 
   const reorderedSiblings = siblings.map((s, i) => ({ ...s, order: i }))
