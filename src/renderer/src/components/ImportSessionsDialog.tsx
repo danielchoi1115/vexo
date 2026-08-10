@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useDraggableModal } from '../hooks/useDraggableModal'
 import { useSettingsStore } from '../stores/settingsStore'
 
 interface Props {
@@ -15,6 +16,7 @@ export function ImportSessionsDialog({ onClose, onDone }: Props): React.JSX.Elem
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const { modalRef, modalStyle, dragHandleProps } = useDraggableModal()
 
   const runImport = async (path: string, filePassword?: string): Promise<void> => {
     const r = await window.api.sessions.importFile(path, filePassword)
@@ -64,8 +66,12 @@ export function ImportSessionsDialog({ onClose, onDone }: Props): React.JSX.Elem
 
   return (
     <div className="modal-backdrop">
-      <div className="modal export-modal">
-        <div className="modal-header">
+      <div
+        ref={modalRef as React.RefObject<HTMLDivElement | null>}
+        className="modal export-modal"
+        style={modalStyle}
+      >
+        <div className="modal-header modal-drag-handle" {...dragHandleProps}>
           <h3>{t('session.import')}</h3>
           <button
             type="button"

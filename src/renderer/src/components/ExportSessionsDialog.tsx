@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useDraggableModal } from '../hooks/useDraggableModal'
 import { useSettingsStore } from '../stores/settingsStore'
 
 interface Props {
@@ -13,6 +14,7 @@ export function ExportSessionsDialog({ onClose, onDone }: Props): React.JSX.Elem
   const [password2, setPassword2] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const { modalRef, modalStyle, dragHandleProps } = useDraggableModal()
 
   const submit = async (): Promise<void> => {
     setError(null)
@@ -44,8 +46,12 @@ export function ExportSessionsDialog({ onClose, onDone }: Props): React.JSX.Elem
 
   return (
     <div className="modal-backdrop">
-      <div className="modal export-modal">
-        <div className="modal-header">
+      <div
+        ref={modalRef as React.RefObject<HTMLDivElement | null>}
+        className="modal export-modal"
+        style={modalStyle}
+      >
+        <div className="modal-header modal-drag-handle" {...dragHandleProps}>
           <h3>{t('session.export')}</h3>
           <button
             type="button"

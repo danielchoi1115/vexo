@@ -13,6 +13,7 @@ import {
   getVisibleActiveTabIds,
   moveTab,
   removeTab,
+  reorderTabInLeaf,
   replaceTabId,
   resizeSplit,
   setLeafActiveTab
@@ -97,6 +98,8 @@ interface AppState {
   updateTransfer: (p: TransferProgress) => void
   /** Drag-drop tab move / split */
   dropTab: (tabId: string, targetLeafId: string, zone: DropZone) => void
+  /** Reorder tabs within one pane (same leaf) */
+  reorderPaneTab: (leafId: string, tabId: string, toIndex: number) => void
   setLeafActive: (leafId: string, tabId: string) => void
   resizeLayoutSplit: (splitId: string, sizes: [number, number]) => void
 }
@@ -454,6 +457,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         layout,
         focusedActiveId: tabId,
         focusedLeafId
+      }
+    })
+  },
+
+  reorderPaneTab: (leafId, tabId, toIndex) => {
+    set((s) => {
+      if (!s.layout) return s
+      return {
+        layout: reorderTabInLeaf(s.layout, leafId, tabId, toIndex),
+        focusedActiveId: tabId,
+        focusedLeafId: leafId
       }
     })
   },

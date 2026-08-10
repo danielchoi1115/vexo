@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useDraggableModal } from '../hooks/useDraggableModal'
 import { useSettingsStore } from '../stores/settingsStore'
 
 interface Props {
@@ -10,11 +11,20 @@ interface Props {
 export function PasswordSaveDialog({ username, host, onAnswer }: Props): React.JSX.Element {
   const t = useSettingsStore((s) => s.t)
   const [dontAskAgain, setDontAskAgain] = useState(false)
+  const { modalRef, modalStyle, dragHandleProps } = useDraggableModal()
 
   return (
     <div className="modal-backdrop password-save-backdrop">
-      <div className="modal password-save-modal" role="dialog" aria-modal="true">
-        <h3>{t('passwordSave.title')}</h3>
+      <div
+        ref={modalRef as React.RefObject<HTMLDivElement | null>}
+        className="modal password-save-modal"
+        style={modalStyle}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="modal-drag-handle password-save-drag" {...dragHandleProps}>
+          <h3>{t('passwordSave.title')}</h3>
+        </div>
         <p className="password-save-body">
           {t('passwordSave.body', { user: username, host })}
         </p>

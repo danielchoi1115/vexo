@@ -983,10 +983,37 @@ select:focus {
   border: 1px solid transparent;
   border-bottom: none;
   max-width: 160px;
-  cursor: pointer;
+  cursor: grab;
   flex-shrink: 0;
   opacity: 0.72;
   color: var(--muted);
+  position: relative;
+}
+
+.tab:active {
+  cursor: grabbing;
+}
+
+/* Drop indicator while reordering tabs in a pane */
+.tab.tab-drop-before::before,
+.tab.tab-drop-after::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--focus);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.tab.tab-drop-before::before {
+  left: -1px;
+}
+
+.tab.tab-drop-after::after {
+  right: -1px;
 }
 
 .tab.inactive:hover {
@@ -1512,6 +1539,20 @@ select:focus {
   padding: 0 10px;
   width: 100%;
   box-sizing: border-box;
+  /* Labels are muted; do not inherit — value must read as real text */
+  color: var(--text);
+  font-size: 14px;
+}
+
+.session-form input::placeholder,
+.session-form textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.session-form input:disabled {
+  color: var(--muted);
+  opacity: 0.85;
 }
 
 .session-form input.secret-stored {
@@ -1536,6 +1577,8 @@ select:focus {
   flex: 1;
   min-width: 0;
   height: 34px;
+  color: var(--text);
+  font-size: 14px;
 }
 
 .session-form .path-row .control-btn {
@@ -1572,6 +1615,32 @@ select:focus {
   margin-bottom: 8px;
 }
 
+/* Drag any modal by its handle (usually .modal-header) */
+.modal-drag-handle {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.modal-drag-handle:active {
+  cursor: grabbing;
+}
+
+.modal-drag-handle .modal-close-btn,
+.modal-drag-handle button {
+  cursor: pointer;
+  touch-action: auto;
+}
+
+.prompt-drag-handle h3,
+.password-save-drag h3 {
+  margin: 0 0 8px;
+}
+
+.prompt-drag-handle {
+  margin: 0 0 4px;
+}
+
 .settings-modal {
   display: flex;
   flex-direction: column;
@@ -1595,7 +1664,8 @@ select:focus {
   display: grid;
   grid-template-columns: 160px 1fr;
   min-height: 0;
-  flex: 1 1 auto;
+  /* Grow between header and footer; never push footer off-screen */
+  flex: 1 1 0;
   overflow: hidden;
 }
 
@@ -1645,6 +1715,37 @@ select:focus {
   gap: 14px;
   padding-bottom: 8px;
   min-height: min-content;
+}
+
+/* Footer: About link (left) + OK/Cancel/Apply (right) — same chrome as old .settings-actions */
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.settings-about-link {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  margin: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--focus);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.settings-about-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .settings-actions {
@@ -1769,8 +1870,13 @@ select:focus {
   height: 34px;
   min-height: 34px;
   padding: 0 10px;
-  font-size: 13px;
+  font-size: 14px;
+  color: var(--text);
   box-sizing: border-box;
+}
+
+.session-form .ui-select-value {
+  color: var(--text);
 }
 
 .settings-field {
@@ -1817,12 +1923,59 @@ select:focus {
   margin-top: 2px;
 }
 
-.settings-actions {
-  padding: 12px 16px;
-  border-top: 1px solid var(--border);
+/* Restore original action-row behavior; padding/border live on .settings-footer */
+.settings-footer .settings-actions.form-actions {
+  display: flex;
+  flex-shrink: 0;
   margin: 0;
+  padding: 0;
+  border: none;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.about-modal {
+  width: min(320px, 92vw);
+  padding: 20px 20px 16px;
+  text-align: center;
+  overflow: auto;
+}
+
+.about-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0 16px;
+}
+
+.about-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
+  object-fit: cover;
+  margin-bottom: 8px;
+}
+
+.about-name {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 650;
+}
+
+.about-version,
+.about-meta {
+  margin: 0;
+  font-size: 13px;
+}
+
+.about-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
 .tree-item.folder.selected {

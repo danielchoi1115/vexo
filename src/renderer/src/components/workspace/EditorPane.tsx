@@ -20,6 +20,7 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
   const setLeafActive = useAppStore((s) => s.setLeafActive)
   const setFocusedLeaf = useAppStore((s) => s.setFocusedLeaf)
   const dropTab = useAppStore((s) => s.dropTab)
+  const reorderPaneTab = useAppStore((s) => s.reorderPaneTab)
   const connectSession = useAppStore((s) => s.connectSession)
   const disconnectSession = useAppStore((s) => s.disconnectSession)
   const disconnectOthers = useAppStore((s) => s.disconnectOthers)
@@ -32,6 +33,8 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
   const [dropZone, setDropZone] = useState<DropZone | null>(null)
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; id: string } | null>(null)
   const [paneMenu, setPaneMenu] = useState<{ x: number; y: number } | null>(null)
+  /** Insert-before index while reordering tabs in this pane */
+  const [tabDropIndex, setTabDropIndex] = useState<number | null>(null)
   const tabRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
   const isLeafFocused = focusedLeafId === leaf.id
@@ -171,20 +174,70 @@ export function EditorPane({ leaf, sessions }: Props): React.JSX.Element {
           if (tabId) dropTab(tabId, leaf.id, 'center')
         }}
       >
-        <div className="tab-bar-scroll" ref={tabScrollRef}>
-          {paneSessions.map((s) => (
+        <div
+          className="tab-bar-scroll"
+          ref={tabScrollRef}
+          onDragLeave={(e) => {
+            if (!tabScrollRef.current?.contains(e.relatedTarget as Node)) {
+              setTabDropIndex(null)
+            }
+          }}
+        >
+          {paneSessions.map((s, index) => (
             <div
               key={s.id}
               ref={(node) => {
                 if (node) tabRefs.current.set(s.id, node)
                 else tabRefs.current.delete(s.id)
               }}
-              className={`tab ${s.id === activeTabId ? 'active' : 'inactive'}`}
+              className={`tab ${s.id === activeTabId ? 'active' : 'inactive'}${
+                tabDropIndex === index ? ' tab-drop-before' : ''
+              }${tabDropIndex === index + 1 && index === paneSessions.length - 1 ? ' tab-drop-after' : ''}`}
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData(TAB_MIME, s.id)
                 e.dataTransfer.effectAllowed = 'move'
                 e.dataTransfer.setData('text/plain', s.id)
+              }}
+              onDragEnd={() => setTabDropIndex(null)}
+              onDragOver={(e) => {
+                const types = [...e.dataTransfer.types]
+                if (!types.includes(TAB_MIME) && !types.includes(SESSION_CONFIG_MIME)) return
+                e.preventDefault()
+                e.stopPropagation()
+                // Same-pane reorder indicator (tabs only)
+                if (types.includes(TAB_MIME)) {
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  const before = e.clientX < rect.left + rect.width / 2
+                  setTabDropIndex(before ? index : index + 1)
+                  e.dataTransfer.dropEffect = 'move'
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setTabDropIndex(null)
+
+                const configId = e.dataTransfer.getData(SESSION_CONFIG_MIME)
+                if (configId) {
+                  void connectSession(configId, { leafId: leaf.id, zone: 'center' })
+                  return
+                }
+
+                const tabId = e.dataTransfer.getData(TAB_MIME)
+                if (!tabId) return
+
+                // Reorder within this pane
+                if (leaf.tabIds.includes(tabId)) {
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  const before = e.clientX < rect.left + rect.width / 2
+                  const toIndex = before ? index : index + 1
+                  reorderPaneTab(leaf.id, tabId, toIndex)
+                  return
+                }
+
+                // Tab from another pane → add to this leaf
+                dropTab(tabId, leaf.id, 'center')
               }}
               onClick={() => setLeafActive(leaf.id, s.id)}
               onContextMenu={(e) => {

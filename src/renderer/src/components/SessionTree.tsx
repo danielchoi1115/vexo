@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionConfig, SessionFolder } from '../../../shared/types'
+import { useDraggableModal } from '../hooks/useDraggableModal'
 import { useAppStore } from '../stores/appStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { ContextMenu, type MenuItem } from './ContextMenu'
@@ -31,6 +32,41 @@ function nextDuplicateName(name: string, existingNames: string[]): string {
   if (m?.[2]) i = Number(m[2]) + 1
   while (set.has(`${base} (${i})`)) i++
   return `${base} (${i})`
+}
+
+/**
+ * Own mount for session form so drag offset resets when closed
+ * (unlike Settings which unmounts the whole modal component).
+ */
+function SessionEditModal({
+  initial,
+  defaultFolderId,
+  onCancel,
+  onSaved
+}: {
+  initial: SessionConfig | null
+  defaultFolderId: string | null
+  onCancel: () => void
+  onSaved: () => void
+}): React.JSX.Element {
+  const { modalRef, modalStyle, dragHandleProps } = useDraggableModal()
+  return (
+    <div className="modal-backdrop">
+      <div
+        ref={modalRef as React.RefObject<HTMLDivElement | null>}
+        className="modal session-modal"
+        style={modalStyle}
+      >
+        <SessionForm
+          initial={initial}
+          defaultFolderId={defaultFolderId}
+          onCancel={onCancel}
+          onSaved={onSaved}
+          dragHandleProps={dragHandleProps}
+        />
+      </div>
+    </div>
+  )
 }
 
 export function SessionTree(): React.JSX.Element {
@@ -515,19 +551,15 @@ export function SessionTree(): React.JSX.Element {
       )}
 
       {editing && (
-        <div className="modal-backdrop">
-          <div className="modal session-modal">
-            <SessionForm
-              initial={editing === 'new' ? null : editing}
-              defaultFolderId={defaultFolderId}
-              onCancel={() => setEditing(null)}
-              onSaved={() => {
-                setEditing(null)
-                void loadSessions()
-              }}
-            />
-          </div>
-        </div>
+        <SessionEditModal
+          initial={editing === 'new' ? null : editing}
+          defaultFolderId={defaultFolderId}
+          onCancel={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null)
+            void loadSessions()
+          }}
+        />
       )}
 
       {exportOpen && (

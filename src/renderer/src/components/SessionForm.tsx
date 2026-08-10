@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import type {
   AuthMethod,
   PasswordSavePolicy,
@@ -10,12 +10,21 @@ import type {
 import { useSettingsStore } from '../stores/settingsStore'
 import { Select } from './Select'
 
+type DragHandleProps = {
+  onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void
+  onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void
+  onPointerUp: (e: ReactPointerEvent<HTMLElement>) => void
+  onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => void
+}
+
 interface Props {
   initial?: SessionConfig | null
   /** Target folder for new sessions (from sidebar selection) */
   defaultFolderId?: string | null
   onSaved: () => void
   onCancel: () => void
+  /** Optional header drag (session modal shell) */
+  dragHandleProps?: DragHandleProps
 }
 
 /** Visual dummy so the user can see a secret is already stored (never the real value). */
@@ -37,7 +46,8 @@ export function SessionForm({
   initial,
   defaultFolderId,
   onSaved,
-  onCancel
+  onCancel,
+  dragHandleProps
 }: Props): React.JSX.Element {
   const t = useSettingsStore((s) => s.t)
   const defaultEncoding = useSettingsStore((s) => s.defaultEncoding)
@@ -136,7 +146,10 @@ export function SessionForm({
 
   return (
     <form className="session-form" onSubmit={submit}>
-      <div className="modal-header session-form-header">
+      <div
+        className={`modal-header session-form-header${dragHandleProps ? ' modal-drag-handle' : ''}`}
+        {...(dragHandleProps ?? {})}
+      >
         <h3>{initial ? t('session.editSession') : t('session.newSession')}</h3>
         <button
           type="button"

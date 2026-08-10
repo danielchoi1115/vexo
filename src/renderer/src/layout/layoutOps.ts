@@ -267,6 +267,38 @@ export function cycleTabsVisual(
 }
 
 /**
+ * Reorder a tab within the same leaf. `toIndex` is the insert-before index
+ * in the list *before* removing the dragged tab (drop-target index).
+ */
+export function reorderTabInLeaf(
+  root: LayoutNode,
+  leafId: string,
+  tabId: string,
+  toIndex: number
+): LayoutNode {
+  const map = (node: LayoutNode): LayoutNode => {
+    if (node.type === 'leaf') {
+      if (node.id !== leafId) return node
+      const from = node.tabIds.indexOf(tabId)
+      if (from < 0) return node
+      const tabIds = [...node.tabIds]
+      tabIds.splice(from, 1)
+      let idx = Math.max(0, Math.min(toIndex, tabIds.length + 1))
+      if (from < idx) idx -= 1
+      idx = Math.max(0, Math.min(idx, tabIds.length))
+      if (from === idx) return node
+      tabIds.splice(idx, 0, tabId)
+      return { ...node, tabIds, activeTabId: tabId }
+    }
+    return {
+      ...node,
+      children: [map(node.children[0]!), map(node.children[1]!)]
+    }
+  }
+  return map(root)
+}
+
+/**
  * Move tab into target leaf. zone=center adds as tab;
  * edge zones split the target leaf.
  */

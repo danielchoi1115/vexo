@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useDraggableModal } from '../hooks/useDraggableModal'
 
 interface Props {
   title: string
@@ -20,6 +21,7 @@ export function PromptDialog({
 }: Props): React.JSX.Element {
   const [value, setValue] = useState(defaultValue)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { modalRef, modalStyle, dragHandleProps } = useDraggableModal()
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -36,11 +38,15 @@ export function PromptDialog({
   return (
     <div className="modal-backdrop" onMouseDown={onCancel}>
       <form
+        ref={modalRef as React.RefObject<HTMLFormElement | null>}
         className="modal prompt-modal"
+        style={modalStyle}
         onMouseDown={(e) => e.stopPropagation()}
         onSubmit={submit}
       >
-        <h3>{title}</h3>
+        <div className="modal-drag-handle prompt-drag-handle" {...dragHandleProps}>
+          <h3>{title}</h3>
+        </div>
         {label && <p className="muted">{label}</p>}
         <input
           ref={inputRef}
