@@ -177,7 +177,15 @@ export const ko: MessageTree = {
     hostKeyHint: '이 기기에 아직 저장되지 않은 호스트에 적용됩니다.',
     cursorBlock: '블록',
     cursorUnderline: '밑줄',
-    cursorBar: '막대'
+    cursorBar: '막대',
+    about: 'About'
+  },
+  about: {
+    title: 'About Vexo',
+    version: '버전 {version}',
+    copyright: '© {year} Vexo',
+    license: '라이선스: MIT',
+    close: '닫기'
   },
   passwordSave: {
     title: '비밀번호를 저장할까요?',

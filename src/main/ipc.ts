@@ -15,6 +15,12 @@ export function registerIpc(ssh: SshManager, getWindow: () => BrowserWindow | nu
     }
   })
 
+  // From package.json (and packaged app metadata)
+  ipcMain.handle('app:getInfo', () => ({
+    name: app.getName(),
+    version: app.getVersion()
+  }))
+
   ipcMain.handle('broadcast:history:get', () => broadcastHistory.getHistory())
   ipcMain.handle('broadcast:history:push', (_e, line: string) =>
     broadcastHistory.pushCommand(line)

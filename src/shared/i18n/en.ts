@@ -176,7 +176,15 @@ export const en = {
     hostKeyHint: 'Applies to hosts not saved on this device yet.',
     cursorBlock: 'Block',
     cursorUnderline: 'Underline',
-    cursorBar: 'Bar'
+    cursorBar: 'Bar',
+    about: 'About'
+  },
+  about: {
+    title: 'About Vexo',
+    version: 'Version {version}',
+    copyright: '© {year} Vexo',
+    license: 'License: MIT',
+    close: 'Close'
   },
   passwordSave: {
     title: 'Save password?',

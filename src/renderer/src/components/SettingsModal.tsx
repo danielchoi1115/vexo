@@ -10,8 +10,10 @@ import type {
   TermType,
   TerminalEncoding
 } from '../../../shared/types'
+import { useDraggableModal } from '../hooks/useDraggableModal'
 import { useSettingsStore } from '../stores/settingsStore'
 import { applyTerminalSettingsToAll } from '../terminal/terminalCache'
+import { AboutModal } from './AboutModal'
 import { Select } from './Select'
 
 function pickSettings(s: AppSettings): AppSettings {
@@ -81,6 +83,8 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
   const schemes = Object.values(COLOR_SCHEMES)
   const [tab, setTab] = useState<SettingsTab>('general')
   const [fonts, setFonts] = useState<string[]>(PREFERRED_FONTS)
+  const [aboutOpen, setAboutOpen] = useState(false)
+  const { modalRef, modalStyle, dragHandleProps } = useDraggableModal()
 
   const [draft, setDraft] = useState<AppSettings>(() => pickSettings(settings))
 
@@ -139,8 +143,13 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div className="modal settings-modal" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="modal-header">
+      <div
+        ref={modalRef as React.RefObject<HTMLDivElement | null>}
+        className="modal settings-modal"
+        style={modalStyle}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header modal-drag-handle" {...dragHandleProps}>
           <h3>{t('settings.title')}</h3>
           <button
             type="button"
@@ -457,18 +466,29 @@ export function SettingsModal({ onClose }: Props): React.JSX.Element {
           </div>
         </div>
 
-        <div className="form-actions settings-actions">
-          <button type="button" className="btn primary" onClick={() => void onOk()}>
-            {t('common.ok')}
+        <div className="settings-footer">
+          <button
+            type="button"
+            className="settings-about-link"
+            onClick={() => setAboutOpen(true)}
+          >
+            {t('settings.about')}
           </button>
-          <button type="button" className="btn" onClick={onClose}>
-            {t('common.cancel')}
-          </button>
-          <button type="button" className="btn" disabled={!dirty} onClick={() => void apply()}>
-            {t('common.apply')}
-          </button>
+          <div className="form-actions settings-actions">
+            <button type="button" className="btn primary" onClick={() => void onOk()}>
+              {t('common.ok')}
+            </button>
+            <button type="button" className="btn" onClick={onClose}>
+              {t('common.cancel')}
+            </button>
+            <button type="button" className="btn" disabled={!dirty} onClick={() => void apply()}>
+              {t('common.apply')}
+            </button>
+          </div>
         </div>
       </div>
+
+      {aboutOpen && <AboutModal onClose={() => setAboutOpen(false)} />}
     </div>
   )
 }

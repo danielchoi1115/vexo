@@ -308,6 +308,7 @@ export interface VexoApi {
   }
   /** Main-process delivered shortcuts (Ctrl+Arrow etc. that Chromium may eat) */
   app: {
+    getInfo: () => Promise<{ name: string; version: string }>
     onShortcut: (
       callback: (payload: { action: 'tab-next' | 'tab-prev' }) => void
     ) => () => void

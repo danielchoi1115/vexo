@@ -1,9 +1,10 @@
 {
   "name": "vexo",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SSH client desktop app with multi-session terminal and SFTP",
   "main": "./out/main/index.js",
   "author": "vexo",
+  "license": "MIT",
   "homepage": "https://github.com/vexo/vexo",
   "scripts": {
     "format": "prettier --write .",

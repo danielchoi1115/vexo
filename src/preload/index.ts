@@ -118,6 +118,7 @@ const api: VexoApi = {
     setTitle: (title: string) => ipcRenderer.invoke('window:setTitle', title)
   },
   app: {
+    getInfo: () => ipcRenderer.invoke('app:getInfo'),
     onShortcut: (callback) =>
       onChannel<[{ action: 'tab-next' | 'tab-prev' }]>('app:shortcut', callback)
   },
