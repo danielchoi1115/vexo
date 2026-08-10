@@ -271,6 +271,23 @@ export class SshManager {
         /* ignore */
       }
     })
+    // sshd Banner (e.g. Banner /etc/issue.net) — pre-auth, not on the shell stream
+    client.on('banner', (message: string) => {
+      try {
+        if (live.clientGen !== gen || live.client !== client) return
+        this.writeSshBanner(live, message)
+      } catch {
+        /* ignore */
+      }
+    })
+  }
+
+  /** Display OpenSSH-style pre-auth banner in the terminal. */
+  private writeSshBanner(live: LiveSession, message: string): void {
+    if (!message) return
+    let text = message.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    if (!text.endsWith('\n')) text += '\n'
+    this.termWrite(live, text.replace(/\n/g, '\r\n'))
   }
 
   private onClientError(live: LiveSession, client: Client, gen: number, err: Error): void {
