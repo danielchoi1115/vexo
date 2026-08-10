@@ -1,4 +1,4 @@
-import { BrowserWindow, clipboard, dialog, ipcMain, nativeImage, app } from 'electron'
+import { BrowserWindow, clipboard, dialog, ipcMain, app } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync } from 'fs'
 import type { ConnectOptions, SessionInput, TreeReorderPayload, AppSettings } from '../shared/types'
@@ -204,10 +204,16 @@ export function registerIpc(ssh: SshManager, getWindow: () => BrowserWindow | nu
     ssh.downloadToDesktop(activeSessionId, remotePath)
   )
   ipcMain.handle(
+    'sftp:downloadBatch',
+    (_e, activeSessionId: string, remotePaths: string[], mode: 'ask' | 'desktop') =>
+      ssh.downloadBatch(activeSessionId, remotePaths, mode)
+  )
+  ipcMain.handle(
     'sftp:upload',
     (_e, activeSessionId: string, localPath: string, remotePath: string) =>
       ssh.upload(activeSessionId, localPath, remotePath)
   )
+  ipcMain.handle('sftp:cancel', (_e, transferId: string) => ssh.cancelTransfer(transferId))
   ipcMain.handle('sftp:pickLocalFiles', async () => {
     const win = getWindow()
     const result = await dialog.showOpenDialog(win!, {
@@ -222,15 +228,6 @@ export function registerIpc(ssh: SshManager, getWindow: () => BrowserWindow | nu
     })
     if (result.canceled || !result.filePath) return null
     return result.filePath
-  })
-
-  // Native drag-out (after file is local)
-  ipcMain.on('sftp:startDrag', (event, localPath: string) => {
-    const icon = nativeImage.createFromPath(join(app.getAppPath(), 'resources', 'icon.png'))
-    event.sender.startDrag({
-      file: localPath,
-      icon: icon.isEmpty() ? nativeImage.createEmpty() : icon
-    })
   })
 
   ipcMain.handle('dialog:pickPrivateKey', async () => {

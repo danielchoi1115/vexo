@@ -138,6 +138,9 @@ export interface TransferProgress {
   total: number
   done: boolean
   error?: string
+  /** 1-based index when several files share one transfer job */
+  batchIndex?: number
+  batchTotal?: number
 }
 
 export interface ConnectOptions {
@@ -274,14 +277,20 @@ export interface VexoApi {
       activeSessionId: string,
       remotePath: string
     ) => Promise<{ transferId: string; localPath: string }>
+    /** Multi-file download: one folder/desktop prompt, progress 1/N…N/N */
+    downloadBatch: (
+      activeSessionId: string,
+      remotePaths: string[],
+      mode: 'ask' | 'desktop'
+    ) => Promise<{ transferId: string }>
     upload: (
       activeSessionId: string,
       localPath: string,
       remotePath: string
     ) => Promise<{ transferId: string }>
+    cancel: (transferId: string) => Promise<boolean>
     pickLocalFiles: () => Promise<string[]>
     pickSavePath: (defaultName: string) => Promise<string | null>
-    startDrag: (localPath: string) => void
     onProgress: (callback: (progress: TransferProgress) => void) => () => void
   }
   dialog: {

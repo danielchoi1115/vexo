@@ -398,6 +398,7 @@ select:focus {
   flex: 1;
   overflow: auto;
   padding: 4px 0;
+  outline: none;
 }
 
 .sftp-row {
@@ -406,6 +407,7 @@ select:focus {
   gap: 6px;
   padding: 5px 10px;
   cursor: default;
+  user-select: none;
 }
 
 .sftp-row:hover {
@@ -413,7 +415,11 @@ select:focus {
 }
 
 .sftp-row.selected {
-  background: color-mix(in srgb, var(--focus) 18%, transparent);
+  background: color-mix(in srgb, var(--focus) 22%, transparent);
+}
+
+.sftp-row.selected:hover {
+  background: color-mix(in srgb, var(--focus) 28%, transparent);
 }
 
 .file-icon {
@@ -1944,10 +1950,33 @@ select:focus {
 
 .transfer-item {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 6px;
   font-size: 11px;
+  min-width: 0;
+}
+
+.transfer-item .transfer-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transfer-item .progress {
+  flex: 1 1 80px;
+  min-width: 48px;
+}
+
+.transfer-item .transfer-cancel {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.3;
+  min-height: 0;
 }
 
 .progress {

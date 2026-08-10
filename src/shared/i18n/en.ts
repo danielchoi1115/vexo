@@ -121,8 +121,10 @@ export const en = {
     properties: 'Properties',
     permissions: 'Permissions',
     deleteConfirm: 'Delete {name}?',
+    deleteConfirmMany: 'Delete {count} items?',
     chmodLabel: 'Permissions (e.g. 755)',
-    refresh: 'Refresh'
+    refresh: 'Refresh',
+    cancelTransfer: 'Cancel'
   },
   settings: {
     title: 'Settings',

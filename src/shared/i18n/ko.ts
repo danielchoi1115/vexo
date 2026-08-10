@@ -122,8 +122,10 @@ export const ko: MessageTree = {
     properties: '속성',
     permissions: '권한',
     deleteConfirm: '{name}을(를) 삭제할까요?',
+    deleteConfirmMany: '{count}개 항목을 삭제할까요?',
     chmodLabel: '권한 (예: 755)',
-    refresh: '새로고침'
+    refresh: '새로고침',
+    cancelTransfer: '취소'
   },
   settings: {
     title: '설정',

@@ -94,13 +94,13 @@ const api: VexoApi = {
       ipcRenderer.invoke('sftp:download', activeSessionId, remotePath, localPath),
     downloadToDesktop: (activeSessionId, remotePath) =>
       ipcRenderer.invoke('sftp:downloadToDesktop', activeSessionId, remotePath),
+    downloadBatch: (activeSessionId, remotePaths, mode) =>
+      ipcRenderer.invoke('sftp:downloadBatch', activeSessionId, remotePaths, mode),
     upload: (activeSessionId, localPath, remotePath) =>
       ipcRenderer.invoke('sftp:upload', activeSessionId, localPath, remotePath),
+    cancel: (transferId) => ipcRenderer.invoke('sftp:cancel', transferId),
     pickLocalFiles: () => ipcRenderer.invoke('sftp:pickLocalFiles'),
     pickSavePath: (defaultName) => ipcRenderer.invoke('sftp:pickSavePath', defaultName),
-    startDrag: (localPath: string) => {
-      ipcRenderer.send('sftp:startDrag', localPath)
-    },
     onProgress: (callback: (progress: TransferProgress) => void) =>
       onChannel<[TransferProgress]>('sftp:progress', callback)
   },

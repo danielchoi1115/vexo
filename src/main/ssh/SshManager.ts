@@ -1,5 +1,11 @@
 import { Client, type ConnectConfig, type SFTPWrapper, type ClientChannel } from 'ssh2'
-import { readFileSync, mkdirSync, existsSync } from 'fs'
+import {
+  readFileSync,
+  createReadStream,
+  createWriteStream,
+  unlink,
+  statSync
+} from 'fs'
 import { basename, join } from 'path'
 import { app, BrowserWindow, dialog } from 'electron'
 import iconv from 'iconv-lite'
@@ -136,6 +142,12 @@ interface LiveSession {
   phase: SessionPhase
   /** Avoid double "session ended" prompts */
   endedHintsShown?: boolean
+  /** Latest size from renderer (kept even before shell stream exists) */
+  pendingCols?: number
+  pendingRows?: number
+  /** Last size actually applied to the PTY */
+  lastPtyCols?: number
+  lastPtyRows?: number
   /**
    * Bumps on every Client replace so late error/close from the old Client
    * cannot touch the new handshake (generation mismatch → ignore).
@@ -603,9 +615,11 @@ export class SshManager {
 
     const termType: TermType =
       config.termType || getSettings().defaultTermType || 'xterm-256color'
-    // Prefer a generous default PTY size; renderer will resize ASAP.
+    // Prefer pending renderer size when available (avoids vim using 40-row default).
     // Too-small PTY cols make bash history redraw erase scrollback lines.
-    const pty = { term: termType, cols: 120, rows: 40 }
+    const cols = live.pendingCols && live.pendingCols >= 20 ? live.pendingCols : 120
+    const rows = live.pendingRows && live.pendingRows >= 5 ? live.pendingRows : 40
+    const pty = { term: termType, cols, rows }
 
     /*
      * CRITICAL order: interactive shell FIRST, before SFTP/exec channels.
@@ -642,6 +656,10 @@ export class SshManager {
     })
 
     live.stream = stream
+    live.lastPtyCols = cols
+    live.lastPtyRows = rows
+    // Apply any newer fit size that arrived during shell open
+    this.flushPtyResize(live)
 
     touchLastConnected(config.id)
     this.setStatus(live, 'connected')
@@ -989,12 +1007,33 @@ export class SshManager {
     live.stream.write(this.encodeRemote(live, payload))
   }
 
+  /**
+   * Renderer fit size. Stored even before the shell stream exists so the first
+   * client.shell() and a post-open flush match the real pane (fixes vim height).
+   */
   resize(activeSessionId: string, cols: number, rows: number): void {
     const live = this.sessions.get(activeSessionId)
-    if (!live?.stream) return
-    if (live.info.status !== 'connected' && live.phase !== 'shell') return
+    if (!live) return
     if (cols < 20 || rows < 5) return
-    live.stream.setWindow(rows, cols, 0, 0)
+    live.pendingCols = cols
+    live.pendingRows = rows
+    this.flushPtyResize(live)
+  }
+
+  private flushPtyResize(live: LiveSession): void {
+    if (!live.stream) return
+    if (live.phase !== 'shell' && live.info.status !== 'connected') return
+    const cols = live.pendingCols
+    const rows = live.pendingRows
+    if (cols == null || rows == null || cols < 20 || rows < 5) return
+    if (live.lastPtyCols === cols && live.lastPtyRows === rows) return
+    try {
+      live.stream.setWindow(rows, cols, 0, 0)
+      live.lastPtyCols = cols
+      live.lastPtyRows = rows
+    } catch {
+      /* stream may be closing */
+    }
   }
 
   async disconnect(activeSessionId: string): Promise<void> {
@@ -1003,6 +1042,7 @@ export class SshManager {
 
   /** Close sockets only; keep LiveSession for error UI / restart until disconnectSession. */
   private teardownClient(live: LiveSession): void {
+    this.cancelTransfersForSession(live.info.id)
     live.connectWaiter = null
     live.phase = live.phase === 'shell' ? 'ended' : live.phase === 'auth' ? 'ended' : live.phase
     if (live.metricsTimer) {
@@ -1030,6 +1070,7 @@ export class SshManager {
     if (!live) return
     // Remove first so late error/close handlers no-op
     this.sessions.delete(activeSessionId)
+    this.cancelTransfersForSession(activeSessionId)
     live.connectWaiter = null
     live.phase = 'ended'
     if (live.metricsTimer) clearInterval(live.metricsTimer)
@@ -1157,8 +1198,40 @@ export class SshManager {
     })
   }
 
+  /** In-flight SFTP transfers (download/upload) for cancel + cleanup */
+  private transfers = new Map<
+    string,
+    { activeSessionId: string; cancel: () => void }
+  >()
+  private progressLastAt = new Map<string, number>()
+
   private emitProgress(progress: TransferProgress): void {
+    // Throttle mid-transfer IPC so shell stays responsive on the same connection
+    if (!progress.done) {
+      const last = this.progressLastAt.get(progress.transferId)
+      const now = Date.now()
+      if (last != null && now - last < 120 && progress.transferred > 0) return
+      this.progressLastAt.set(progress.transferId, now)
+    } else {
+      this.progressLastAt.delete(progress.transferId)
+    }
     this.getWindow()?.webContents.send('sftp:progress', progress)
+  }
+
+  cancelTransfer(transferId: string): boolean {
+    const t = this.transfers.get(transferId)
+    if (!t) return false
+    t.cancel()
+    return true
+  }
+
+  private cancelTransfersForSession(activeSessionId: string): void {
+    for (const [id, t] of [...this.transfers]) {
+      if (t.activeSessionId === activeSessionId) {
+        t.cancel()
+        this.transfers.delete(id)
+      }
+    }
   }
 
   async download(
@@ -1183,7 +1256,7 @@ export class SshManager {
       dest = result.filePath
     }
 
-    return this.fastGet(sftp, activeSessionId, remotePath, dest)
+    return this.streamDownload(sftp, activeSessionId, remotePath, dest)
   }
 
   async downloadToDesktop(
@@ -1194,24 +1267,161 @@ export class SshManager {
     return this.download(activeSessionId, remotePath, dest)
   }
 
-  /** Download to temp for native drag-out */
-  async downloadToTemp(
+  /**
+   * Multi-file download: one destination choice, single transfer job with 1/N progress.
+   * - mode `ask` + 1 file → save dialog (same as download)
+   * - mode `ask` + many → pick folder once
+   * - mode `desktop` → all files to desktop (no prompts)
+   */
+  async downloadBatch(
     activeSessionId: string,
-    remotePath: string
-  ): Promise<{ transferId: string; localPath: string }> {
-    const dir = join(app.getPath('temp'), 'vexo-drag')
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-    const dest = join(dir, basename(remotePath))
-    return this.download(activeSessionId, remotePath, dest)
+    remotePaths: string[],
+    mode: 'ask' | 'desktop'
+  ): Promise<{ transferId: string }> {
+    const paths = remotePaths.filter(Boolean)
+    if (paths.length === 0) throw new Error('No files to download')
+
+    if (paths.length === 1) {
+      if (mode === 'desktop') {
+        const r = await this.downloadToDesktop(activeSessionId, paths[0]!)
+        return { transferId: r.transferId }
+      }
+      const r = await this.download(activeSessionId, paths[0]!)
+      return { transferId: r.transferId }
+    }
+
+    const win = this.getWindow()
+    let destDir: string
+    if (mode === 'desktop') {
+      destDir = app.getPath('desktop')
+    } else {
+      const result = await dialog.showOpenDialog(win!, {
+        title: 'Save downloads to…',
+        properties: ['openDirectory', 'createDirectory'],
+        defaultPath: app.getPath('desktop')
+      })
+      if (result.canceled || !result.filePaths[0]) {
+        const err = new Error('CANCELLED')
+        err.name = 'CancelledError'
+        throw err
+      }
+      destDir = result.filePaths[0]
+    }
+
+    const live = this.getLive(activeSessionId)
+    const sftp = this.ensureSftp(live)
+    const transferId = crypto.randomUUID()
+    const batchTotal = paths.length
+    let batchCancelled = false
+    let fileCancel: (() => void) | null = null
+
+    this.transfers.set(transferId, {
+      activeSessionId,
+      cancel: () => {
+        batchCancelled = true
+        fileCancel?.()
+      }
+    })
+
+    try {
+      for (let i = 0; i < paths.length; i++) {
+        if (batchCancelled) {
+          this.emitProgress({
+            transferId,
+            activeSessionId,
+            filename: basename(paths[i]!),
+            direction: 'download',
+            transferred: 0,
+            total: 0,
+            done: true,
+            error: 'Cancelled',
+            batchIndex: i + 1,
+            batchTotal
+          })
+          const err = new Error('CANCELLED')
+          err.name = 'CancelledError'
+          throw err
+        }
+
+        const remotePath = paths[i]!
+        const dest = join(destDir, basename(remotePath))
+        await this.streamDownload(sftp, activeSessionId, remotePath, dest, {
+          transferId,
+          batchIndex: i + 1,
+          batchTotal,
+          ownTransferSlot: false,
+          emitDoneOnComplete: false,
+          onRegisterCancel: (fn) => {
+            fileCancel = fn
+          }
+        })
+        fileCancel = null
+
+        // File finished — show N/N step (still running if more remain)
+        const last = i === paths.length - 1
+        this.emitProgress({
+          transferId,
+          activeSessionId,
+          filename: basename(remotePath),
+          direction: 'download',
+          transferred: 1,
+          total: 1,
+          done: last,
+          batchIndex: i + 1,
+          batchTotal
+        })
+      }
+    } catch (err) {
+      const cancelled =
+        batchCancelled ||
+        (err instanceof Error &&
+          (err.name === 'CancelledError' || /cancel/i.test(err.message || '')))
+      if (!cancelled) {
+        this.emitProgress({
+          transferId,
+          activeSessionId,
+          filename: '',
+          direction: 'download',
+          transferred: 0,
+          total: 0,
+          done: true,
+          error: err instanceof Error ? err.message : String(err),
+          batchTotal
+        })
+      }
+      throw err
+    } finally {
+      this.transfers.delete(transferId)
+    }
+
+    return { transferId }
   }
 
-  private async fastGet(
+  /**
+   * Stream download (single-stream) so the shared SSH connection stays usable
+   * for the interactive shell, and so cancel can destroy the streams.
+   */
+  private async streamDownload(
     sftp: SFTPWrapper,
     activeSessionId: string,
     remotePath: string,
-    dest: string
+    dest: string,
+    opts?: {
+      transferId?: string
+      batchIndex?: number
+      batchTotal?: number
+      /** When false, outer batch owns transfers map entry */
+      ownTransferSlot?: boolean
+      /** When false, batch emits final done after all files */
+      emitDoneOnComplete?: boolean
+      onRegisterCancel?: (cancel: () => void) => void
+    }
   ): Promise<{ transferId: string; localPath: string }> {
-    const transferId = crypto.randomUUID()
+    const transferId = opts?.transferId ?? crypto.randomUUID()
+    const ownSlot = opts?.ownTransferSlot !== false
+    const emitDone = opts?.emitDoneOnComplete !== false
+    const batchIndex = opts?.batchIndex
+    const batchTotal = opts?.batchTotal
     const filename = basename(remotePath)
     let total = 0
     try {
@@ -1223,51 +1433,146 @@ export class SshManager {
       total = 0
     }
 
-    await new Promise<void>((resolve, reject) => {
-      sftp.fastGet(
-        remotePath,
-        dest,
-        {
-          step: (transferred: number, _chunk: number, t: number) => {
-            this.emitProgress({
-              transferId,
-              activeSessionId,
-              filename,
-              direction: 'download',
-              transferred,
-              total: t || total,
-              done: false
-            })
-          }
-        },
-        (err) => {
+    const baseProgress = (): Pick<
+      TransferProgress,
+      'transferId' | 'activeSessionId' | 'filename' | 'direction' | 'batchIndex' | 'batchTotal'
+    > => ({
+      transferId,
+      activeSessionId,
+      filename,
+      direction: 'download',
+      batchIndex,
+      batchTotal
+    })
+
+    let transferred = 0
+    try {
+      await new Promise<void>((resolve, reject) => {
+        let settled = false
+        let userCancelled = false
+        const rs = sftp.createReadStream(remotePath, { highWaterMark: 64 * 1024 })
+        const ws = createWriteStream(dest)
+
+        const settle = (err?: Error): void => {
+          if (settled) return
+          settled = true
+          if (ownSlot) this.transfers.delete(transferId)
           if (err) {
+            try {
+              unlink(dest, () => {})
+            } catch {
+              /* ignore */
+            }
+            const cancelled =
+              userCancelled ||
+              err.name === 'CancelledError' ||
+              /cancel/i.test(err.message || '')
             this.emitProgress({
-              transferId,
-              activeSessionId,
-              filename,
-              direction: 'download',
-              transferred: 0,
+              ...baseProgress(),
+              transferred,
               total,
               done: true,
-              error: err.message
+              error: cancelled ? 'Cancelled' : err.message || 'Download failed'
             })
-            reject(err)
+            const out = cancelled
+              ? Object.assign(new Error('CANCELLED'), { name: 'CancelledError' })
+              : err
+            reject(out)
           } else {
-            this.emitProgress({
-              transferId,
-              activeSessionId,
-              filename,
-              direction: 'download',
-              transferred: total,
-              total,
-              done: true
-            })
+            if (emitDone) {
+              this.emitProgress({
+                ...baseProgress(),
+                transferred: total || transferred,
+                total: total || transferred,
+                done: true
+              })
+            } else {
+              this.emitProgress({
+                ...baseProgress(),
+                transferred: total || transferred,
+                total: total || transferred,
+                done: false
+              })
+            }
             resolve()
           }
         }
-      )
-    })
+
+        const cancelFn = (): void => {
+          userCancelled = true
+          try {
+            rs.destroy()
+          } catch {
+            /* ignore */
+          }
+          try {
+            ws.destroy()
+          } catch {
+            /* ignore */
+          }
+          const err = new Error('CANCELLED')
+          err.name = 'CancelledError'
+          settle(err)
+        }
+
+        if (ownSlot) {
+          this.transfers.set(transferId, {
+            activeSessionId,
+            cancel: cancelFn
+          })
+        }
+        opts?.onRegisterCancel?.(cancelFn)
+
+        this.emitProgress({
+          ...baseProgress(),
+          transferred: 0,
+          total,
+          done: false
+        })
+
+        rs.on('data', (chunk: Buffer | string) => {
+          transferred += typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length
+          this.emitProgress({
+            ...baseProgress(),
+            transferred,
+            total,
+            done: false
+          })
+        })
+        rs.on('error', (err: Error) => settle(err))
+        ws.on('error', (err: Error) => settle(err))
+        ws.on('finish', () => settle())
+        ws.on('close', () => {
+          if (!settled) {
+            settle(
+              userCancelled
+                ? Object.assign(new Error('CANCELLED'), { name: 'CancelledError' })
+                : new Error('Download interrupted')
+            )
+          }
+        })
+        rs.pipe(ws)
+      })
+    } catch (err) {
+      if (ownSlot && this.transfers.has(transferId)) {
+        this.transfers.delete(transferId)
+        const cancelled =
+          err instanceof Error &&
+          (err.name === 'CancelledError' || /cancel/i.test(err.message || ''))
+        this.emitProgress({
+          ...baseProgress(),
+          transferred,
+          total,
+          done: true,
+          error: cancelled
+            ? 'Cancelled'
+            : err instanceof Error
+              ? err.message
+              : String(err)
+        })
+      }
+      throw err
+    }
 
     return { transferId, localPath: dest }
   }
@@ -1297,50 +1602,113 @@ export class SshManager {
       }
     }
 
+    let total = 0
+    try {
+      total = statSync(localPath).size
+    } catch {
+      total = 0
+    }
+
+    let transferred = 0
     await new Promise<void>((resolve, reject) => {
-      sftp.fastPut(
-        localPath,
-        finalRemote,
-        {
-          step: (transferred: number, _chunk: number, total: number) => {
-            this.emitProgress({
-              transferId,
-              activeSessionId,
-              filename,
-              direction: 'upload',
-              transferred,
-              total,
-              done: false
-            })
-          }
-        },
-        (err) => {
-          if (err) {
-            this.emitProgress({
-              transferId,
-              activeSessionId,
-              filename,
-              direction: 'upload',
-              transferred: 0,
-              total: 0,
-              done: true,
-              error: err.message
-            })
-            reject(err)
-          } else {
-            this.emitProgress({
-              transferId,
-              activeSessionId,
-              filename,
-              direction: 'upload',
-              transferred: 1,
-              total: 1,
-              done: true
-            })
-            resolve()
-          }
+      let settled = false
+      let userCancelled = false
+      const rs = createReadStream(localPath, { highWaterMark: 64 * 1024 })
+      const ws = sftp.createWriteStream(finalRemote)
+
+      const settle = (err?: Error): void => {
+        if (settled) return
+        settled = true
+        this.transfers.delete(transferId)
+        if (err) {
+          const cancelled =
+            userCancelled ||
+            err.name === 'CancelledError' ||
+            /cancel/i.test(err.message || '')
+          this.emitProgress({
+            transferId,
+            activeSessionId,
+            filename,
+            direction: 'upload',
+            transferred,
+            total,
+            done: true,
+            error: cancelled ? 'Cancelled' : err.message || 'Upload failed'
+          })
+          const out = cancelled
+            ? Object.assign(new Error('CANCELLED'), { name: 'CancelledError' })
+            : err
+          reject(out)
+        } else {
+          this.emitProgress({
+            transferId,
+            activeSessionId,
+            filename,
+            direction: 'upload',
+            transferred: total || transferred,
+            total: total || transferred,
+            done: true
+          })
+          resolve()
         }
-      )
+      }
+
+      this.transfers.set(transferId, {
+        activeSessionId,
+        cancel: () => {
+          // Mark first so destroy()-driven stream errors are not shown as failures
+          userCancelled = true
+          try {
+            rs.destroy()
+          } catch {
+            /* ignore */
+          }
+          try {
+            ws.destroy()
+          } catch {
+            /* ignore */
+          }
+          const err = new Error('CANCELLED')
+          err.name = 'CancelledError'
+          settle(err)
+        }
+      })
+
+      this.emitProgress({
+        transferId,
+        activeSessionId,
+        filename,
+        direction: 'upload',
+        transferred: 0,
+        total,
+        done: false
+      })
+
+      rs.on('data', (chunk: string | Buffer) => {
+        transferred += typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length
+        this.emitProgress({
+          transferId,
+          activeSessionId,
+          filename,
+          direction: 'upload',
+          transferred,
+          total,
+          done: false
+        })
+      })
+      rs.on('error', (err: Error) => settle(err))
+      ws.on('error', (err: Error) => settle(err))
+      // SFTP write streams typically complete on 'close'
+      ws.on('close', () => {
+        if (!settled) {
+          settle(
+            userCancelled
+              ? Object.assign(new Error('CANCELLED'), { name: 'CancelledError' })
+              : undefined
+          )
+        }
+      })
+      rs.pipe(ws)
     })
 
     return { transferId }
