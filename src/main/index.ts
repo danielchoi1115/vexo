@@ -39,7 +39,6 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    autoHideMenuBar: true,
     title: 'Vexo',
     // Windows/Linux window & taskbar; macOS uses .icns from the bundle for Dock
     icon: appIcon,
@@ -53,6 +52,12 @@ function createWindow(): void {
 
   // Ensure OS chrome never falls back to "Electron"
   mainWindow.setTitle('Vexo')
+
+  // Windows/Linux: a hidden menu bar still takes focus on Alt (IME 한/영).
+  // Removing the window menu — not swallowing Alt — leaves terminal Meta keys intact.
+  if (process.platform !== 'darwin') {
+    mainWindow.setMenu(null)
+  }
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.setTitle('Vexo')

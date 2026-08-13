@@ -13,3 +13,4 @@
 9. **브로드캐스트** — 보이는(leaf active) 연결 탭에 입력 복제. 히스토리는 main store.
 10. **copyOnSelect** — 켜면 선택 즉시 복사, 터미널 Ctrl+C/V 클립보드 단축 비활성.
 11. **여러 줄 붙여넣기** — 셸이 떠 있으면 줄 단위로 보내고 출력 quiet를 기다림. password/passphrase 프롬프트에서는 큐를 멈추고 사용자 입력을 기다린 뒤 재개. 줄바꿈은 CR. 클립보드에 개행 없는 마지막 조각은 Enter 없이 삽입. auth 중에는 한꺼번에 전송.
+12. **네이티브 메뉴** — Windows/Linux는 `setMenu(null)`. `autoHideMenuBar`는 Alt가 숨은 메뉴로 포커스를 가져감. macOS 앱 메뉴는 유지. Alt 삼키기·포커스 폴링 금지.
