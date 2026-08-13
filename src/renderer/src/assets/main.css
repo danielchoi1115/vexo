@@ -285,8 +285,18 @@ select:focus {
   margin-left: 0;
 }
 
+.tree-folder {
+  margin-bottom: 8px;
+}
+
+.tree-children {
+  margin: 1px 0 2px 16px;
+  padding: 0 0 2px 8px;
+  border-left: 1px solid var(--border);
+}
+
 .tree-children .tree-item.session {
-  margin-left: 12px;
+  margin-left: 0;
 }
 
 .tree-item.folder {
@@ -2112,16 +2122,31 @@ select:focus {
 }
 
 .transfer-item .transfer-label {
-  flex: 0 1 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.transfer-item .transfer-name {
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.transfer-item .transfer-pct {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .transfer-item .progress {
-  flex: 1 1 80px;
-  min-width: 48px;
+  flex: 0 0 52px;
+  width: 52px;
+  min-width: 52px;
 }
 
 .transfer-item .transfer-cancel {

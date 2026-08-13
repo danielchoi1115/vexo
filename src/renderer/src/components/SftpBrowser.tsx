@@ -653,13 +653,13 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
               return (
                 <div key={tr.transferId} className="transfer-item">
                   <span className="transfer-label">
-                    {tr.direction === 'upload' ? '↑' : '↓'} {tr.filename}
-                    {batch ? ` · ${batch}` : ''}
-                    {tr.error
-                      ? ` — ${tr.error}`
-                      : tr.done
-                        ? ' — done'
-                        : ` — ${pct}%`}
+                    <span className="transfer-name" title={tr.filename}>
+                      {tr.direction === 'upload' ? '↑' : '↓'} {tr.filename}
+                      {batch ? ` · ${batch}` : ''}
+                    </span>
+                    <span className="transfer-pct">
+                      {tr.error ? tr.error : tr.done ? 'done' : `${pct}%`}
+                    </span>
                   </span>
                   <div className="progress">
                     <div style={{ width: `${pct}%` }} />
