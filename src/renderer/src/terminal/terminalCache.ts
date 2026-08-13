@@ -4,6 +4,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { useSettingsStore } from '../stores/settingsStore'
 import type { TerminalTheme } from '../../../shared/themes'
+import { SessionPaste, toPtyNewlines } from './pasteQueue'
 
 export interface CachedTerminal {
   sessionId: string
@@ -19,6 +20,9 @@ export interface CachedTerminal {
 const cache = new Map<string, CachedTerminal>()
 /** SSH data that arrived before the terminal instance existed */
 const earlyBuffer = new Map<string, string[]>()
+const pasteBySession = new Map<string, SessionPaste>()
+/** Last ssh:status — sequential paste only when the interactive shell is up. */
+const sessionStatus = new Map<string, string>()
 
 let park: HTMLDivElement | null = null
 let globalDataHooked = false
@@ -48,33 +52,15 @@ function getPark(): HTMLDivElement {
   return park
 }
 
-/** Windows clipboard often uses CRLF; bare CR+LF both act as Enter on many shells. */
-function normalizePasteText(text: string): string {
-  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-}
-
-/** Below this, paste is one IPC write; longer text is chunked to avoid PTY/prompt desync. */
-const PASTE_CHUNK_CHARS = 512
-const PASTE_CHUNK_GAP_MS = 8
-
-/**
- * Paste into the remote PTY: normalize newlines, then write in chunks with a short gap
- * so long pastes do not overwrite the prompt (hostname) redraw.
- */
-async function pasteToSession(sessionId: string, raw: string): Promise<void> {
-  const text = normalizePasteText(raw)
-  if (!text) return
-  if (text.length <= PASTE_CHUNK_CHARS) {
-    await window.api.ssh.write(sessionId, text)
+function pasteToSession(sessionId: string, raw: string): void {
+  if (endedHooks?.isEnded(sessionId)) return
+  const paste = pasteBySession.get(sessionId)
+  if (paste) {
+    void paste.paste(raw)
     return
   }
-  for (let i = 0; i < text.length; i += PASTE_CHUNK_CHARS) {
-    if (!cache.has(sessionId)) return
-    await window.api.ssh.write(sessionId, text.slice(i, i + PASTE_CHUNK_CHARS))
-    if (i + PASTE_CHUNK_CHARS < text.length) {
-      await new Promise<void>((r) => setTimeout(r, PASTE_CHUNK_GAP_MS))
-    }
-  }
+  const text = toPtyNewlines(raw)
+  if (text) void window.api.ssh.write(sessionId, text)
 }
 
 function decodeB64(b64: string): string {
@@ -117,6 +103,7 @@ export function initTerminalDataRouter(): void {
 
   window.api.ssh.onData((id, b64) => {
     const text = decodeB64(b64)
+    pasteBySession.get(id)?.onRemoteData(text)
     const entry = cache.get(id)
     if (entry) {
       entry.term.write(text)
@@ -127,6 +114,16 @@ export function initTerminalDataRouter(): void {
     // Cap early buffer (~keep last chunks)
     if (buf.length > 400) buf.splice(0, buf.length - 200)
     earlyBuffer.set(id, buf)
+  })
+
+  window.api.ssh.onStatus((info) => {
+    sessionStatus.set(info.id, info.status)
+    if (info.status === 'disconnected' || info.status === 'error') {
+      pasteBySession.get(info.id)?.cancel()
+    }
+  })
+  void window.api.ssh.listActive().then((list) => {
+    for (const s of list) sessionStatus.set(s.id, s.status)
   })
 }
 
@@ -306,6 +303,7 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
       }
       return
     }
+    pasteBySession.get(sessionId)?.onLocalData(data)
     void window.api.ssh.write(sessionId, data)
   })
 
@@ -366,14 +364,15 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     return true
   })
 
+  // Capture: xterm's textarea paste handler stopPropagation, so bubble never runs.
   const onPaste = (e: ClipboardEvent): void => {
     e.preventDefault()
     e.stopPropagation()
-    if (useSettingsStore.getState().copyOnSelect) return
+    e.stopImmediatePropagation()
     const text = e.clipboardData?.getData('text/plain')
-    if (text) void pasteToSession(sessionId, text)
+    if (text) pasteToSession(sessionId, text)
   }
-  hostEl.addEventListener('paste', onPaste)
+  hostEl.addEventListener('paste', onPaste, true)
 
   // Capture phase so Ctrl+wheel never reaches xterm scroll first
   const onWheel = (e: WheelEvent): void => {
@@ -393,7 +392,7 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     if (!useSettingsStore.getState().pasteOnRightClick) return
     e.preventDefault()
     void navigator.clipboard.readText().then((text) => {
-      if (text) void pasteToSession(sessionId, text)
+      if (text) pasteToSession(sessionId, text)
     })
   }
   hostEl.addEventListener('contextmenu', onContext)
@@ -401,7 +400,10 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
   const dispose = (): void => {
     dataDisp.dispose()
     selDisp.dispose()
-    hostEl.removeEventListener('paste', onPaste)
+    pasteBySession.get(sessionId)?.dispose()
+    pasteBySession.delete(sessionId)
+    sessionStatus.delete(sessionId)
+    hostEl.removeEventListener('paste', onPaste, true)
     hostEl.removeEventListener('wheel', onWheel, { capture: true } as EventListenerOptions)
     hostEl.removeEventListener('contextmenu', onContext)
     term.dispose()
@@ -409,6 +411,14 @@ export function acquireTerminal(sessionId: string): CachedTerminal {
     earlyBuffer.delete(sessionId)
     cache.delete(sessionId)
   }
+
+  const paste = new SessionPaste({
+    isAlive: () => cache.has(sessionId) && !endedHooks?.isEnded(sessionId),
+    // Unknown (missed status event) → sequential. Only dump-all during auth.
+    isShellReady: () => sessionStatus.get(sessionId) !== 'connecting',
+    write: (data) => window.api.ssh.write(sessionId, data)
+  })
+  pasteBySession.set(sessionId, paste)
 
   const entry: CachedTerminal = {
     sessionId,

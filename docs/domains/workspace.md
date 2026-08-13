@@ -28,7 +28,8 @@
 
 - 세션당 캐시 1개. attach 시 컨테이너에 붙이고 fit.  
 - `active` prop으로 포커스 시 `term.focus()`.  
-- 설정(폰트/테마/scrollback)은 캐시에 반영.
+- 설정(폰트/테마/scrollback)은 캐시에 반영.  
+- 여러 줄 붙여넣기: `pasteQueue` — 줄 단위 + quiet 대기 + secret 프롬프트에서 정지 (`decisions.md` 11).
 
 ## 브로드캐스트
 
