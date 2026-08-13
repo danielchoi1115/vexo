@@ -140,6 +140,12 @@ export function SessionTree(): React.JSX.Element {
     setEditing('new')
   }
 
+  const toggleFolder = (folder: SessionFolder): void => {
+    void window.api.sessions
+      .setFolderCollapsed(folder.id, !folder.collapsed)
+      .then(loadSessions)
+  }
+
   const duplicateSession = async (session: SessionConfig): Promise<void> => {
     const name = nextDuplicateName(
       session.name,
@@ -218,10 +224,7 @@ export function SessionTree(): React.JSX.Element {
     { label: t('session.newSessionHere'), onClick: () => openNewSession(folder.id) },
     {
       label: folder.collapsed ? t('session.expand') : t('session.collapse'),
-      onClick: () =>
-        void window.api.sessions
-          .setFolderCollapsed(folder.id, !folder.collapsed)
-          .then(loadSessions)
+      onClick: () => toggleFolder(folder)
     },
     {
       label: t('common.rename'),
@@ -432,6 +435,10 @@ export function SessionTree(): React.JSX.Element {
                   e.stopPropagation()
                   setSelectedFolderId(folder.id)
                 }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation()
+                  toggleFolder(folder)
+                }}
                 onContextMenu={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
@@ -445,10 +452,9 @@ export function SessionTree(): React.JSX.Element {
                   title={folder.collapsed ? 'Expand' : 'Collapse'}
                   onClick={(e) => {
                     e.stopPropagation()
-                    void window.api.sessions
-                      .setFolderCollapsed(folder.id, !folder.collapsed)
-                      .then(loadSessions)
+                    toggleFolder(folder)
                   }}
+                  onDoubleClick={(e) => e.stopPropagation()}
                 >
                   {folder.collapsed ? '▶' : '▼'}
                 </button>

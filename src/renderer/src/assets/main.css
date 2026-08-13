@@ -2002,6 +2002,17 @@ select:focus {
   width: 1.4em;
   font-size: 10px;
   line-height: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.tree-chevron::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  left: -8px;
+  right: -6px;
 }
 
 .tree-chevron:hover {
