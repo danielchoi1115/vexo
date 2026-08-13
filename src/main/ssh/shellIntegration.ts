@@ -1,6 +1,8 @@
 /**
  * Session-local shell integration (OSC CWD for Follow Terminal Folder).
  *
+ * 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+ *
  * Login shell stays normal (`client.shell` → MOTD / Welcome).
  * SI scripts are staged via SFTP, then sourced once after MOTD settles.
  * The source command's echo is muted in the renderer so it is not visible.

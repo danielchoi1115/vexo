@@ -12,7 +12,8 @@ import { initTerminalDataRouter, registerEndedSessionHooks } from './terminal/te
 function App(): React.JSX.Element {
   const loadSessions = useAppStore((s) => s.loadSessions)
   const upsertActive = useAppStore((s) => s.upsertActive)
-  const setRemoteCwd = useAppStore((s) => s.setRemoteCwd)
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // const setRemoteCwd = useAppStore((s) => s.setRemoteCwd)
   const setMetrics = useAppStore((s) => s.setMetrics)
   const error = useAppStore((s) => s.error)
   const setError = useAppStore((s) => s.setError)
@@ -50,9 +51,10 @@ function App(): React.JSX.Element {
     const offStatus = window.api.ssh.onStatus((info) => {
       upsertActive(info)
     })
-    const offCwd = window.api.ssh.onCwd((id, cwd) => {
-      setRemoteCwd(id, cwd)
-    })
+    // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+    // const offCwd = window.api.ssh.onCwd((id, cwd) => {
+    //   setRemoteCwd(id, cwd)
+    // })
     const offMetrics = window.api.ssh.onMetrics((m) => {
       setMetrics(m)
     })
@@ -65,11 +67,11 @@ function App(): React.JSX.Element {
     })
     return () => {
       offStatus()
-      offCwd()
+      // offCwd()
       offMetrics()
       offPwd()
     }
-  }, [loadSessions, loadSettings, upsertActive, setRemoteCwd, setMetrics])
+  }, [loadSessions, loadSettings, upsertActive, setMetrics])
 
   return (
     <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>

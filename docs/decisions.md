@@ -8,7 +8,7 @@
 4. **host key** — 설정 `accept-new` | `strict` | `ignore` + `knownHostsStore`.
 5. **비밀번호 저장 정책** — 세션별 `ask` | `always` | `never`. ask면 인증 성공 후·셸 전에 다이얼로그.
 6. **셸 vs SFTP 순서** — interactive shell 먼저, 그 다음 SFTP·통합 스크립트.
-7. **Follow CWD** — 셸 통합 OSC로만. 입력 cd 줄 파싱 없음.
+7. **Follow CWD** — 2026-08-13 사용자 요청으로 비활성화.
 8. **터미널 수명** — 스플릿/탭 이동 시 xterm을 dispose하지 않고 유지(캐시 park/attach).
 9. **브로드캐스트** — 보이는(leaf active) 연결 탭에 입력 복제. 히스토리는 main store.
 10. **copyOnSelect** — 켜면 선택 즉시 복사, 터미널 Ctrl+C/V 클립보드 단축 비활성.

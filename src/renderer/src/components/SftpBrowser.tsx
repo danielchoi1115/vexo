@@ -87,19 +87,21 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
     | null
   >(null)
 
-  const follow = useAppStore((s) => s.followTerminalFolder)
-  const setFollow = useAppStore((s) => s.setFollowTerminalFolder)
-  const remoteCwd = useAppStore((s) => s.remoteCwd)
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // const follow = useAppStore((s) => s.followTerminalFolder)
+  // const setFollow = useAppStore((s) => s.setFollowTerminalFolder)
+  // const remoteCwd = useAppStore((s) => s.remoteCwd)
   const transfers = useAppStore((s) => s.transfers)
   const updateTransfer = useAppStore((s) => s.updateTransfer)
 
   const pathRef = useRef(path)
   pathRef.current = path
-  const followRef = useRef(follow)
-  followRef.current = follow
-  const skipFollowRef = useRef(false)
-  const followTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const followGenRef = useRef(0)
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // const followRef = useRef(follow)
+  // followRef.current = follow
+  // const skipFollowRef = useRef(false)
+  // const followTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // const followGenRef = useRef(0)
   const entriesRef = useRef(entries)
   entriesRef.current = entries
   const selectedRef = useRef(selected)
@@ -141,12 +143,13 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
       } catch (e) {
         if (quiet) {
           setPathInput(pathRef.current)
-          const msg = e instanceof Error ? e.message : String(e)
-          const soft =
-            /no such file|ENOENT|permission denied|EACCES/i.test(msg)
-              ? t('sftp.followPathUnavailable')
-              : null
-          if (soft) setError(soft)
+          // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+          // const msg = e instanceof Error ? e.message : String(e)
+          // const soft =
+          //   /no such file|ENOENT|permission denied|EACCES/i.test(msg)
+          //     ? t('sftp.followPathUnavailable')
+          //     : null
+          // if (soft) setError(soft)
           return
         }
         setError(e instanceof Error ? e.message : String(e))
@@ -160,17 +163,19 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
 
   const navigateUser = useCallback(
     (p: string) => {
-      skipFollowRef.current = true
-      if (followTimerRef.current) {
-        clearTimeout(followTimerRef.current)
-        followTimerRef.current = null
-      }
-      if (followRef.current) setFollow(false)
-      void refresh(p).finally(() => {
-        skipFollowRef.current = false
-      })
+      // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+      // skipFollowRef.current = true
+      // if (followTimerRef.current) {
+      //   clearTimeout(followTimerRef.current)
+      //   followTimerRef.current = null
+      // }
+      // if (followRef.current) setFollow(false)
+      // void refresh(p).finally(() => {
+      //   skipFollowRef.current = false
+      // })
+      void refresh(p)
     },
-    [setFollow, refresh]
+    [refresh]
   )
 
   const submitPath = (): void => {
@@ -206,28 +211,29 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on session switch
   }, [activeSessionId])
 
-  useEffect(() => {
-    if (!follow || !activeSessionId || skipFollowRef.current) return
-    const cwd = remoteCwd[activeSessionId]
-    if (!cwd || cwd === pathRef.current) return
-
-    if (followTimerRef.current) clearTimeout(followTimerRef.current)
-    const gen = ++followGenRef.current
-    followTimerRef.current = setTimeout(() => {
-      followTimerRef.current = null
-      if (gen !== followGenRef.current) return
-      if (!followRef.current || skipFollowRef.current) return
-      if (cwd === pathRef.current) return
-      void refresh(cwd, { quiet: true })
-    }, 200)
-
-    return () => {
-      if (followTimerRef.current) {
-        clearTimeout(followTimerRef.current)
-        followTimerRef.current = null
-      }
-    }
-  }, [follow, activeSessionId, remoteCwd, refresh])
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // useEffect(() => {
+  //   if (!follow || !activeSessionId || skipFollowRef.current) return
+  //   const cwd = remoteCwd[activeSessionId]
+  //   if (!cwd || cwd === pathRef.current) return
+  //
+  //   if (followTimerRef.current) clearTimeout(followTimerRef.current)
+  //   const gen = ++followGenRef.current
+  //   followTimerRef.current = setTimeout(() => {
+  //     followTimerRef.current = null
+  //     if (gen !== followGenRef.current) return
+  //     if (!followRef.current || skipFollowRef.current) return
+  //     if (cwd === pathRef.current) return
+  //     void refresh(cwd, { quiet: true })
+  //   }, 200)
+  //
+  //   return () => {
+  //     if (followTimerRef.current) {
+  //       clearTimeout(followTimerRef.current)
+  //       followTimerRef.current = null
+  //     }
+  //   }
+  // }, [follow, activeSessionId, remoteCwd, refresh])
 
   useEffect(() => {
     return window.api.sftp.onProgress((p: TransferProgress) => {
@@ -614,7 +620,9 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
 
       {error && <div className="banner error compact">{error}</div>}
 
+      {sessionTransfers.length > 0 && (
       <div className="sftp-footer">
+        {/* 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
         <label className="check-row compact" title={t('sftp.followFolderHint')}>
           <input
             type="checkbox"
@@ -630,8 +638,7 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
           />
           {t('sftp.followFolder')}
         </label>
-
-        {sessionTransfers.length > 0 && (
+        */}
           <div className="transfer-bar">
             {sessionTransfers.map((tr) => {
               const pct = tr.total
@@ -671,8 +678,8 @@ export function SftpBrowser({ activeSessionId }: Props): React.JSX.Element {
               )
             })}
           </div>
-        )}
       </div>
+      )}
 
       {menu && (
         <ContextMenu

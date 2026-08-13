@@ -110,6 +110,7 @@ export const ko: MessageTree = {
   sftp: {
     connectToBrowse: '먼저 세션을 연결해 주세요.',
     empty: '파일을 끌어다 놓으면 업로드',
+    // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
     followFolder: '터미널 폴더 따라가기',
     followFolderHint: '터미널의 현재 작업 폴더로 파일 브라우저를 맞춥니다 (셸 통합).',
     followPathUnavailable: '터미널 폴더를 열 수 없어 현재 위치를 유지합니다.',

@@ -1,6 +1,8 @@
 /**
  * Shell-integration CWD extraction from OSC sequences.
  *
+ * 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+ *
  * Priority (first match wins per complete OSC):
  *  1. OSC 633 ; P ; Cwd=<path>     — VS Code / Electerm
  *  2. OSC 7 ; file://…             — standard

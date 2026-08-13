@@ -108,6 +108,7 @@ export const en = {
   sftp: {
     connectToBrowse: 'Connect a session first.',
     empty: 'Drop files to upload',
+    // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
     followFolder: 'Follow terminal folder',
     followFolderHint:
       'Keeps the file browser on the terminal working directory (shell integration).',

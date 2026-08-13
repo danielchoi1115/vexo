@@ -29,15 +29,16 @@ import { getKnownHostKey, setKnownHostKey } from '../knownHostsStore'
 import { getSession, touchLastConnected, updatePasswordSavePolicy } from '../sessionStore'
 import { getSettings } from '../settingsStore'
 import { DataBatcher } from './DataBatcher'
-import { extractCwdsFromOscBuffer } from './cwdOsc'
-import {
-  BASH_ZSH_INTEGRATION,
-  FISH_INTEGRATION,
-  buildSourceCommand,
-  remoteIntegrationPaths,
-  shellKindFromPath,
-  type RemoteShellInfo
-} from './shellIntegration'
+// 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+// import { extractCwdsFromOscBuffer } from './cwdOsc'
+// import {
+//   BASH_ZSH_INTEGRATION,
+//   FISH_INTEGRATION,
+//   buildSourceCommand,
+//   remoteIntegrationPaths,
+//   shellKindFromPath,
+//   type RemoteShellInfo
+// } from './shellIntegration'
 
 /** Result of a terminal auth line prompt. */
 type AuthLineResult = { cancelled: true } | { cancelled: false; value: string }
@@ -121,18 +122,10 @@ interface LiveSession {
   auth: AuthInput
   backspaceSendsCtrlH: boolean
   encoding: TerminalEncoding
-  /**
-   * Rolling buffer for shell-integration OSC sequences (633 / 7 / 1337).
-   * Passive parse of stream data; SI is sourced once after MOTD (echo muted).
-   */
-  oscBuf: string
-  /** True after session-local shell integration was sourced into the PTY */
-  shellIntegrationReady?: boolean
-  /**
-   * While set, strip only SI inject echo lines (keep MOTD / prompt).
-   * Never drop unrelated stream data — that was eating Welcome banners.
-   */
-  siEchoFilterUntil?: number
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // oscBuf: string
+  // shellIntegrationReady?: boolean
+  // siEchoFilterUntil?: number
   /** Last data activity (for waiting until MOTD settles) */
   lastStreamAt?: number
   /** Total bytes received on the interactive shell stream */
@@ -434,7 +427,8 @@ export class SshManager {
       auth,
       backspaceSendsCtrlH,
       encoding,
-      oscBuf: '',
+      // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+      // oscBuf: '',
       phase: 'auth',
       clientGen: 0,
       connectWaiter: null
@@ -645,7 +639,8 @@ export class SshManager {
      * Attach data handlers inside the shell callback so MOTD bytes are not dropped.
      */
     live.phase = 'shell'
-    live.oscBuf = ''
+    // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+    // live.oscBuf = ''
     live.lastStreamAt = Date.now()
     live.streamBytes = 0
 
@@ -682,12 +677,12 @@ export class SshManager {
     this.setStatus(live, 'connected')
     this.maybeStartMetrics(live)
 
-    // SFTP + shell integration only AFTER MOTD has been free to arrive
+    // SFTP only AFTER MOTD has been free to arrive
     void this.afterLoginShellReady(live, config)
   }
 
   /**
-   * After the login shell is up: wait for MOTD to finish, then SFTP + SI + startup.
+   * After the login shell is up: wait for MOTD to finish, then SFTP + startup.
    */
   private async afterLoginShellReady(
     live: LiveSession,
@@ -702,7 +697,7 @@ export class SshManager {
     })
     if (live.phase !== 'shell' || !live.stream) return
 
-    // SFTP for file browser + staging SI scripts (safe after MOTD)
+    // SFTP for file browser (safe after MOTD)
     try {
       if (!live.sftp) {
         live.sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
@@ -713,36 +708,36 @@ export class SshManager {
       /* SFTP optional */
     }
 
-    try {
-      if (live.sftp) {
-        const home = await new Promise<string>((resolve) => {
-          live.sftp!.realpath('.', (err, p) => resolve(!err && p ? p : '/'))
-        })
-        if (home) {
-          live.info = { ...live.info, remoteCwd: home }
-          this.getWindow()?.webContents.send('ssh:cwd', live.info.id, home)
-        }
-      }
-    } catch {
-      /* optional */
-    }
-
-    const shellInfo = await this.detectRemoteShell(live)
-    const sourceCmd = await this.stageShellIntegrationFiles(live, shellInfo)
-
-    if (live.phase !== 'shell' || !live.stream) return
-
-    if (sourceCmd) {
-      // Filter only inject echo lines — never mute the whole stream
-      live.siEchoFilterUntil = Date.now() + 2000
-      try {
-        live.stream.write(this.encodeRemote(live, sourceCmd))
-        live.shellIntegrationReady = true
-      } catch {
-        live.siEchoFilterUntil = undefined
-      }
-      await new Promise((r) => setTimeout(r, 100))
-    }
+    // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+    // try {
+    //   if (live.sftp) {
+    //     const home = await new Promise<string>((resolve) => {
+    //       live.sftp!.realpath('.', (err, p) => resolve(!err && p ? p : '/'))
+    //     })
+    //     if (home) {
+    //       live.info = { ...live.info, remoteCwd: home }
+    //       this.getWindow()?.webContents.send('ssh:cwd', live.info.id, home)
+    //     }
+    //   }
+    // } catch {
+    //   /* optional */
+    // }
+    //
+    // const shellInfo = await this.detectRemoteShell(live)
+    // const sourceCmd = await this.stageShellIntegrationFiles(live, shellInfo)
+    //
+    // if (live.phase !== 'shell' || !live.stream) return
+    //
+    // if (sourceCmd) {
+    //   live.siEchoFilterUntil = Date.now() + 2000
+    //   try {
+    //     live.stream.write(this.encodeRemote(live, sourceCmd))
+    //     live.shellIntegrationReady = true
+    //   } catch {
+    //     live.siEchoFilterUntil = undefined
+    //   }
+    //   await new Promise((r) => setTimeout(r, 100))
+    // }
 
     if (live.phase !== 'shell' || !live.stream) return
 
@@ -800,66 +795,65 @@ export class SshManager {
     })
   }
 
-  /** Detect remote login shell path via a short non-interactive exec. */
-  private async detectRemoteShell(live: LiveSession): Promise<RemoteShellInfo> {
-    return new Promise((resolve) => {
-      let settled = false
-      const done = (info: RemoteShellInfo): void => {
-        if (settled) return
-        settled = true
-        resolve(info)
-      }
-      try {
-        live.client.exec('printf %s "${SHELL:-}"', (err, ch) => {
-          if (err || !ch) {
-            done({ kind: 'unknown', path: '' })
-            return
-          }
-          let out = ''
-          const finish = (): void => {
-            const path = out.trim()
-            done({ kind: shellKindFromPath(path), path })
-          }
-          ch.on('data', (d: Buffer) => {
-            out += d.toString('utf8')
-          })
-          ch.stderr?.on('data', () => {
-            /* ignore */
-          })
-          ch.on('close', finish)
-          ch.on('end', finish)
-          setTimeout(finish, 3000)
-        })
-      } catch {
-        done({ kind: 'unknown', path: '' })
-      }
-    })
-  }
-
-  private writeSftpText(sftp: SFTPWrapper, remotePath: string, text: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const ws = sftp.createWriteStream(remotePath)
-      ws.on('error', reject)
-      ws.on('close', () => resolve())
-      ws.end(Buffer.from(text, 'utf8'))
-    })
-  }
-
-  /** Upload SI scripts; return PTY source command or null. */
-  private async stageShellIntegrationFiles(
-    live: LiveSession,
-    shellInfo: RemoteShellInfo
-  ): Promise<string | null> {
-    if (!live.sftp) return null
-    const paths = remoteIntegrationPaths(live.info.id)
-    try {
-      await this.writeSftpText(live.sftp, paths.sh, BASH_ZSH_INTEGRATION)
-      await this.writeSftpText(live.sftp, paths.fish, FISH_INTEGRATION)
-      return buildSourceCommand(shellInfo.kind, paths.sh, paths.fish)
-    } catch {
-      return null
-    }
-  }
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // private async detectRemoteShell(live: LiveSession): Promise<RemoteShellInfo> {
+  //   return new Promise((resolve) => {
+  //     let settled = false
+  //     const done = (info: RemoteShellInfo): void => {
+  //       if (settled) return
+  //       settled = true
+  //       resolve(info)
+  //     }
+  //     try {
+  //       live.client.exec('printf %s "${SHELL:-}"', (err, ch) => {
+  //         if (err || !ch) {
+  //           done({ kind: 'unknown', path: '' })
+  //           return
+  //         }
+  //         let out = ''
+  //         const finish = (): void => {
+  //           const path = out.trim()
+  //           done({ kind: shellKindFromPath(path), path })
+  //         }
+  //         ch.on('data', (d: Buffer) => {
+  //           out += d.toString('utf8')
+  //         })
+  //         ch.stderr?.on('data', () => {
+  //           /* ignore */
+  //         })
+  //         ch.on('close', finish)
+  //         ch.on('end', finish)
+  //         setTimeout(finish, 3000)
+  //       })
+  //     } catch {
+  //       done({ kind: 'unknown', path: '' })
+  //     }
+  //   })
+  // }
+  //
+  // private writeSftpText(sftp: SFTPWrapper, remotePath: string, text: string): Promise<void> {
+  //   return new Promise((resolve, reject) => {
+  //     const ws = sftp.createWriteStream(remotePath)
+  //     ws.on('error', reject)
+  //     ws.on('close', () => resolve())
+  //     ws.end(Buffer.from(text, 'utf8'))
+  //   })
+  // }
+  //
+  // private async stageShellIntegrationFiles(
+  //   live: LiveSession,
+  //   shellInfo: RemoteShellInfo
+  // ): Promise<string | null> {
+  //   if (!live.sftp) return null
+  //   const paths = remoteIntegrationPaths(live.info.id)
+  //   try {
+  //     await this.writeSftpText(live.sftp, paths.sh, BASH_ZSH_INTEGRATION)
+  //     await this.writeSftpText(live.sftp, paths.fish, FISH_INTEGRATION)
+  //     return buildSourceCommand(shellInfo.kind, paths.sh, paths.fish)
+  //   } catch {
+  //     return null
+  //   }
+  // }
 
   private verifyHostKey(
     host: string,
@@ -966,43 +960,38 @@ export class SshManager {
     w?.resolve()
   }
 
-  /** Publish shell CWD from shell-integration OSC only (no cd inference). */
-  private publishCwd(live: LiveSession, cwd: string): void {
-    if (!cwd || cwd === live.info.remoteCwd) return
-    live.info = { ...live.info, remoteCwd: cwd }
-    this.getWindow()?.webContents.send('ssh:cwd', live.info.id, cwd)
-  }
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // private publishCwd(live: LiveSession, cwd: string): void {
+  //   if (!cwd || cwd === live.info.remoteCwd) return
+  //   live.info = { ...live.info, remoteCwd: cwd }
+  //   this.getWindow()?.webContents.send('ssh:cwd', live.info.id, cwd)
+  // }
 
-  /**
-   * Stream path: passive shell-integration CWD detection.
-   * Supports OSC 633 (VS Code), OSC 7 (file://), OSC 1337 (iTerm2).
-   * Never injects shell hooks or parses typed cd commands.
-   */
   private onStreamData(live: LiveSession, data: Buffer): void {
     const decoded = this.decodeRemote(live, data)
-    const asText = decoded.toString('utf8')
     live.lastStreamAt = Date.now()
     live.streamBytes = (live.streamBytes ?? 0) + decoded.length
-    live.oscBuf += asText
-    if (live.oscBuf.length > 16384) live.oscBuf = live.oscBuf.slice(-8192)
 
-    const { hits, remainder } = extractCwdsFromOscBuffer(live.oscBuf)
-    live.oscBuf = remainder
-    // Use the last path in this chunk (latest prompt wins)
-    if (hits.length > 0) {
-      const last = hits[hits.length - 1]!
-      this.publishCwd(live, last.path)
-    }
-
-    // Only strip the one-shot SI inject line(s); never blank the whole window
-    if (live.siEchoFilterUntil && Date.now() < live.siEchoFilterUntil) {
-      const filtered = filterShellIntegrationEcho(asText)
-      if (filtered.length > 0) {
-        live.batcher.push(Buffer.from(filtered, 'utf8'))
-      }
-      return
-    }
-    live.siEchoFilterUntil = undefined
+    // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+    // const asText = decoded.toString('utf8')
+    // live.oscBuf += asText
+    // if (live.oscBuf.length > 16384) live.oscBuf = live.oscBuf.slice(-8192)
+    //
+    // const { hits, remainder } = extractCwdsFromOscBuffer(live.oscBuf)
+    // live.oscBuf = remainder
+    // if (hits.length > 0) {
+    //   const last = hits[hits.length - 1]!
+    //   this.publishCwd(live, last.path)
+    // }
+    //
+    // if (live.siEchoFilterUntil && Date.now() < live.siEchoFilterUntil) {
+    //   const filtered = filterShellIntegrationEcho(asText)
+    //   if (filtered.length > 0) {
+    //     live.batcher.push(Buffer.from(filtered, 'utf8'))
+    //   }
+    //   return
+    // }
+    // live.siEchoFilterUntil = undefined
 
     live.batcher.push(decoded)
   }
@@ -1840,30 +1829,30 @@ export class SshManager {
   }
 }
 
-/** Drop visible echo of our one-shot SI inject; keep prompts and other output. */
-function filterShellIntegrationEcho(text: string): string {
-  const parts = text.split(/(\r\n|\n|\r)/)
-  let out = ''
-  for (const p of parts) {
-    if (p === '\n' || p === '\r' || p === '\r\n') {
-      out += p
-      continue
-    }
-    if (
-      /\.vexo-si-/i.test(p) ||
-      /stty\s+-echo/i.test(p) ||
-      /stty\s+echo/i.test(p) ||
-      /set\s+\+o\s+history/i.test(p) ||
-      /set\s+-o\s+history/i.test(p) ||
-      /^\s*\.\s+\/tmp\//i.test(p) ||
-      /source\s+\/tmp\/\.vexo/i.test(p)
-    ) {
-      continue
-    }
-    out += p
-  }
-  return out
-}
+// 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+// function filterShellIntegrationEcho(text: string): string {
+//   const parts = text.split(/(\r\n|\n|\r)/)
+//   let out = ''
+//   for (const p of parts) {
+//     if (p === '\n' || p === '\r' || p === '\r\n') {
+//       out += p
+//       continue
+//     }
+//     if (
+//       /\.vexo-si-/i.test(p) ||
+//       /stty\s+-echo/i.test(p) ||
+//       /stty\s+echo/i.test(p) ||
+//       /set\s+\+o\s+history/i.test(p) ||
+//       /set\s+-o\s+history/i.test(p) ||
+//       /^\s*\.\s+\/tmp\//i.test(p) ||
+//       /source\s+\/tmp\/\.vexo/i.test(p)
+//     ) {
+//       continue
+//     }
+//     out += p
+//   }
+//   return out
+// }
 
 function formatRate(bytesPerSec: number): string {
   if (bytesPerSec < 1024) return `${bytesPerSec.toFixed(0)}B/s`

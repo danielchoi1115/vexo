@@ -46,8 +46,9 @@ interface AppState {
   transfers: TransferProgress[]
   connecting: boolean
   error: string | null
-  followTerminalFolder: boolean
-  remoteCwd: Record<string, string>
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // followTerminalFolder: boolean
+  // remoteCwd: Record<string, string>
   metrics: Record<string, RemoteMetrics>
   settingsOpen: boolean
   /** Hide the left sidebar (Ctrl+Shift+B) */
@@ -67,7 +68,8 @@ interface AppState {
   setFocused: (id: string | null, leafId?: string | null) => void
   setFocusedLeaf: (leafId: string | null) => void
   setError: (msg: string | null) => void
-  setFollowTerminalFolder: (v: boolean) => void
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // setFollowTerminalFolder: (v: boolean) => void
   setSettingsOpen: (v: boolean) => void
   toggleSidebar: () => void
   setSelectedFolderId: (id: string | null) => void
@@ -93,7 +95,8 @@ interface AppState {
   /** Reconnect using the same session config (R after session end) */
   restartSession: (activeId: string) => Promise<void>
   upsertActive: (info: ActiveSessionInfo) => void
-  setRemoteCwd: (activeId: string, cwd: string) => void
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // setRemoteCwd: (activeId: string, cwd: string) => void
   setMetrics: (m: RemoteMetrics) => void
   updateTransfer: (p: TransferProgress) => void
   /** Drag-drop tab move / split */
@@ -129,8 +132,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   transfers: [],
   connecting: false,
   error: null,
-  followTerminalFolder: false,
-  remoteCwd: {},
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // followTerminalFolder: false,
+  // remoteCwd: {},
   metrics: {},
   settingsOpen: false,
   sidebarCollapsed: false,
@@ -160,7 +164,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   setFocusedLeaf: (leafId) => set({ focusedLeafId: leafId }),
   setError: (msg) => set({ error: msg }),
-  setFollowTerminalFolder: (v) => set({ followTerminalFolder: v }),
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // setFollowTerminalFolder: (v) => set({ followTerminalFolder: v }),
   setSettingsOpen: (v) => set({ settingsOpen: v }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setSelectedFolderId: (id) => set({ selectedFolderId: id }),
@@ -415,9 +420,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     })
   },
 
-  setRemoteCwd: (activeId, cwd) => {
-    set((s) => ({ remoteCwd: { ...s.remoteCwd, [activeId]: cwd } }))
-  },
+  // 2026-08-13: 터미널 폴더 따라가기 비활성화 (사용자 요청)
+  // setRemoteCwd: (activeId, cwd) => {
+  //   set((s) => ({ remoteCwd: { ...s.remoteCwd, [activeId]: cwd } }))
+  // },
 
   setMetrics: (m) => {
     set((s) => ({ metrics: { ...s.metrics, [m.activeSessionId]: m } }))

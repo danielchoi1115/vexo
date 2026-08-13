@@ -40,4 +40,4 @@ SSH 데이터는 마운트 전 early buffer 가능.
 
 ## SFTP
 
-활성 SSH의 서브시스템. Follow 폴더는 셸 CWD 이벤트 → `remoteCwd` → (옵션) 목록 갱신.
+활성 SSH의 서브시스템. Follow 폴더는 2026-08-13 사용자 요청으로 비활성화.

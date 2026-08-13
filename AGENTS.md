@@ -28,7 +28,7 @@ Vexo = Electron SSH 클라이언트. 저장 세션 · 멀티 탭/스플릿 터�
 | 어디부터 손댈지 모를 때 | `docs/overview.md`, `docs/architecture.md` | `src/` |
 | 세션/폴더/폼/export·import/비밀번호 저장 | `docs/domains/data.md`, `docs/decisions.md` | `sessionStore`, `credentialStore`, `sessionCrypto`, `SessionForm`, `SessionTree`, export/import dialogs |
 | 연결·인증·끊김·인코딩·host key | `docs/domains/connection.md`, `docs/decisions.md` | `SshManager`, `knownHostsStore` |
-| SFTP·전송·Follow 폴더 | `docs/domains/connection.md` | `SftpBrowser`, SFTP IPC, `cwdOsc`, `shellIntegration` |
+| SFTP·전송 | `docs/domains/connection.md` | `SftpBrowser`, SFTP IPC |
 | 스플릿·탭·포커스·스크롤백·단축키·브로드캐스트 | `docs/domains/workspace.md` | `layoutOps`, `terminalCache`, `EditorPane`, `appStore`, `useAppShortcuts`, `BroadcastBar` |
 | 설정·테마·문구 | `docs/domains/workspace.md` (설정 절) | `settingsStore`, `SettingsModal`, `i18n/*` |
 | 규칙·IPC 패턴 | `docs/conventions.md` | types / preload / ipc |
