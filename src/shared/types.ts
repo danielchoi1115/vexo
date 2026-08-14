@@ -181,6 +181,8 @@ export interface AppSettings {
   /** Default TERM for new sessions */
   defaultTermType: TermType
   hostKeyPolicy: HostKeyPolicy
+  /** Left sidebar width in CSS pixels */
+  sidebarWidth: number
   /** @deprecated migrated to terminal* / ui* */
   fontFamily?: string
   fontSize?: number

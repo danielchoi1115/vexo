@@ -532,5 +532,6 @@ export const DEFAULT_SETTINGS = {
   bellStyle: 'none' as const,
   defaultEncoding: 'utf-8' as const,
   defaultTermType: 'xterm-256color' as const,
-  hostKeyPolicy: 'accept-new' as const
+  hostKeyPolicy: 'accept-new' as const,
+  sidebarWidth: 300
 }

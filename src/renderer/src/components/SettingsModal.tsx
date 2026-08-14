@@ -34,7 +34,8 @@ function pickSettings(s: AppSettings): AppSettings {
     bellStyle: s.bellStyle ?? DEFAULT_SETTINGS.bellStyle,
     defaultEncoding: s.defaultEncoding ?? DEFAULT_SETTINGS.defaultEncoding,
     defaultTermType: s.defaultTermType ?? DEFAULT_SETTINGS.defaultTermType,
-    hostKeyPolicy: s.hostKeyPolicy ?? DEFAULT_SETTINGS.hostKeyPolicy
+    hostKeyPolicy: s.hostKeyPolicy ?? DEFAULT_SETTINGS.hostKeyPolicy,
+    sidebarWidth: s.sidebarWidth ?? DEFAULT_SETTINGS.sidebarWidth
   }
 }
 

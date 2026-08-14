@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Sidebar } from './components/Sidebar'
+import { useCallback, useEffect, useState } from 'react'
+import { clampSidebarWidth, Sidebar } from './components/Sidebar'
 import { Workspace } from './components/Workspace'
 import { BroadcastBar } from './components/BroadcastBar'
 import { SettingsModal } from './components/SettingsModal'
@@ -21,7 +21,10 @@ function App(): React.JSX.Element {
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen)
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed)
   const loadSettings = useSettingsStore((s) => s.load)
+  const updateSettings = useSettingsStore((s) => s.update)
+  const sidebarWidth = useSettingsStore((s) => s.sidebarWidth)
   const t = useSettingsStore((s) => s.t)
+  const [dragWidth, setDragWidth] = useState<number | null>(null)
   const [passwordSave, setPasswordSave] = useState<{
     activeSessionId: string
     username: string
@@ -29,6 +32,18 @@ function App(): React.JSX.Element {
   } | null>(null)
 
   useAppShortcuts()
+
+  const onSidebarWidthDrag = useCallback((width: number) => {
+    setDragWidth(width)
+  }, [])
+  const onSidebarWidthDragEnd = useCallback(
+    (width: number) => {
+      setDragWidth(null)
+      const next = clampSidebarWidth(width)
+      if (next !== sidebarWidth) void updateSettings({ sidebarWidth: next })
+    },
+    [sidebarWidth, updateSettings]
+  )
 
   useEffect(() => {
     initTerminalDataRouter()
@@ -74,8 +89,17 @@ function App(): React.JSX.Element {
   }, [loadSessions, loadSettings, upsertActive, setMetrics])
 
   return (
-    <div className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
-      <Sidebar />
+    <div
+      className={`app-shell${sidebarCollapsed ? ' sidebar-collapsed' : ''}${
+        dragWidth != null ? ' sidebar-resizing' : ''
+      }`}
+      style={
+        {
+          '--sidebar-width': `${dragWidth ?? sidebarWidth ?? 300}px`
+        } as React.CSSProperties
+      }
+    >
+      <Sidebar onWidthDrag={onSidebarWidthDrag} onWidthDragEnd={onSidebarWidthDragEnd} />
       <main className="main">
         {/* Reserve banner slot only for errors — avoid layout jump on Connecting */}
         {error && (

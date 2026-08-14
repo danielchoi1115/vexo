@@ -58,7 +58,7 @@ select:focus {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: var(--sidebar-width, 300px) 1fr;
   height: 100%;
   transition: grid-template-columns 0.15s ease;
 }
@@ -67,8 +67,13 @@ select:focus {
   grid-template-columns: 0 1fr;
 }
 
+.app-shell.sidebar-resizing {
+  transition: none;
+}
+
 /* Sidebar */
 .sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: var(--bg-sidebar);
@@ -76,6 +81,22 @@ select:focus {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 8;
+  touch-action: none;
+}
+
+.sidebar-resizer:hover,
+.app-shell.sidebar-resizing .sidebar-resizer {
+  background: color-mix(in srgb, var(--focus) 55%, transparent);
 }
 
 .app-shell.sidebar-collapsed .sidebar {

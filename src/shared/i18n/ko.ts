@@ -31,7 +31,8 @@ export const ko: MessageTree = {
     search: '검색…',
     connectFirst: '연결된 세션 없음',
     emptySessions: '+ 또는 우클릭으로 세션·폴더 추가',
-    sftpNeedConnect: '먼저 세션을 연결해 주세요.'
+    sftpNeedConnect: '먼저 세션을 연결해 주세요.',
+    resize: '사이드바 너비 조절'
   },
   session: {
     newSession: '새 세션',

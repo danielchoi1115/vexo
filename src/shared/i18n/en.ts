@@ -29,7 +29,8 @@ export const en = {
     search: 'Search…',
     connectFirst: 'No connected session',
     emptySessions: 'Tap + or right-click to add a session or folder',
-    sftpNeedConnect: 'Connect a session first.'
+    sftpNeedConnect: 'Connect a session first.',
+    resize: 'Resize sidebar'
   },
   session: {
     newSession: 'New session',

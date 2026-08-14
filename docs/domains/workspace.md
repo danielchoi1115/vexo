@@ -23,7 +23,7 @@
 - leaf: `tabIds` + `activeTabId`  
 - split: `direction` + `children` + `sizes`  
 - 사이드바 세션을 pane에 드롭 → connect + zone(center/edge 스플릿)  
-- 사이드바: Ctrl+B 접기/펼치기.
+- 사이드바: Ctrl+B 접기/펼치기. 오른쪽 가장자리 드래그로 너비 조절 (설정 `sidebarWidth`).
 
 ## 터미널
 

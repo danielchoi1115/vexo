@@ -79,7 +79,12 @@ export function getSettings(): AppSettings {
     bellStyle,
     defaultEncoding: encoding,
     defaultTermType: termType,
-    hostKeyPolicy
+    hostKeyPolicy,
+    sidebarWidth: clamp(
+      Number(data.sidebarWidth ?? DEFAULT_SETTINGS.sidebarWidth) || DEFAULT_SETTINGS.sidebarWidth,
+      200,
+      560
+    )
   }
 }
 
@@ -101,7 +106,8 @@ export function updateSettings(partial: Partial<AppSettings>): AppSettings {
     'bellStyle',
     'defaultEncoding',
     'defaultTermType',
-    'hostKeyPolicy'
+    'hostKeyPolicy',
+    'sidebarWidth'
   ]
   for (const key of allowed) {
     const v = partial[key]
