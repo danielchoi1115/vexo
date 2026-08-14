@@ -11,7 +11,7 @@
 | `src/renderer/.../workspace/EditorPane.tsx` | 탭 바, 드롭존, pane 메뉴 |
 | `src/renderer/.../Workspace.tsx` | 레이아웃 루트 |
 | `src/renderer/.../BroadcastBar.tsx` | 브로드캐스트 입력 |
-| `src/renderer/.../hooks/useAppShortcuts.ts` | Ctrl+W/Tab/방향 등 |
+| `src/renderer/.../hooks/useAppShortcuts.ts` | Ctrl+W/Tab/B/방향 등 |
 | `src/renderer/.../hooks/useDraggableModal.ts` | 모달 드래그 |
 | `src/main/index.ts` | Ctrl+Arrow IPC, 줌 고정 |
 | `src/renderer/.../SettingsModal.tsx` | 설정 UI |
@@ -22,7 +22,8 @@
 
 - leaf: `tabIds` + `activeTabId`  
 - split: `direction` + `children` + `sizes`  
-- 사이드바 세션을 pane에 드롭 → connect + zone(center/edge 스플릿)
+- 사이드바 세션을 pane에 드롭 → connect + zone(center/edge 스플릿)  
+- 사이드바: Ctrl+B 접기/펼치기.
 
 ## 터미널
 

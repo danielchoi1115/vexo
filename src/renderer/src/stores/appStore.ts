@@ -51,7 +51,7 @@ interface AppState {
   // remoteCwd: Record<string, string>
   metrics: Record<string, RemoteMetrics>
   settingsOpen: boolean
-  /** Hide the left sidebar (Ctrl+Shift+B) */
+  /** Hide the left sidebar (Ctrl+B) */
   sidebarCollapsed: boolean
   selectedFolderId: string | null
   newSessionRequestId: number

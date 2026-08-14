@@ -51,7 +51,7 @@ function runArrowAction(action: ArrowAction): void {
  * - Ctrl+W — close focused tab
  * - Ctrl+Left / Ctrl+Right — prev / next tab (all panes, visual order)
  * - Ctrl+Tab / Ctrl+Shift+Tab — next / prev tab (same)
- * - Ctrl+Shift+B — toggle sidebar
+ * - Ctrl+B — toggle sidebar
  * - Ctrl+, — open settings
  */
 export function useAppShortcuts(): void {
@@ -75,8 +75,8 @@ export function useAppShortcuts(): void {
       const lower = key.length === 1 ? key.toLowerCase() : key
       const inForm = isAppFormField(e.target)
 
-      // Ctrl+Shift+B — toggle sidebar
-      if (e.shiftKey && !e.altKey && (lower === 'b' || key === 'B')) {
+      // Ctrl+B — toggle sidebar
+      if (!e.shiftKey && !e.altKey && (lower === 'b' || key === 'B')) {
         e.preventDefault()
         e.stopPropagation()
         useAppStore.getState().toggleSidebar()

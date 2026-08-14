@@ -50,7 +50,7 @@ const SHORTCUT_ROWS: { descKey: string; keys: string[] }[] = [
   { descKey: 'settings.shortcutNextTab', keys: ['Ctrl', '→'] },
   { descKey: 'settings.shortcutPrevTab', keys: ['Ctrl', 'Shift', 'Tab'] },
   { descKey: 'settings.shortcutPrevTab', keys: ['Ctrl', '←'] },
-  { descKey: 'settings.shortcutToggleSidebar', keys: ['Ctrl', 'Shift', 'B'] },
+  { descKey: 'settings.shortcutToggleSidebar', keys: ['Ctrl', 'B'] },
   { descKey: 'settings.shortcutSettings', keys: ['Ctrl', ','] },
   { descKey: 'settings.shortcutZoom', keys: ['Ctrl', 'Scroll'] },
   { descKey: 'settings.shortcutEndedExit', keys: ['Enter'] },
