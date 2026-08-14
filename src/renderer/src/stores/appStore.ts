@@ -73,6 +73,7 @@ interface AppState {
   setSettingsOpen: (v: boolean) => void
   toggleSidebar: () => void
   setSelectedFolderId: (id: string | null) => void
+  setFolderCollapsed: (id: string, collapsed: boolean) => void
   requestNewSession: () => void
   /** Next/prev tab across all panes (visual order: top→bottom, left→right) */
   cycleTab: (direction: 'next' | 'prev') => void
@@ -169,6 +170,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSettingsOpen: (v) => set({ settingsOpen: v }),
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   setSelectedFolderId: (id) => set({ selectedFolderId: id }),
+  setFolderCollapsed: (id, collapsed) =>
+    set((s) => ({
+      folders: s.folders.map((f) => (f.id === id ? { ...f, collapsed } : f))
+    })),
   setBroadcastEnabled: (v) => set({ broadcastEnabled: v }),
 
   cycleTab: (direction) => {

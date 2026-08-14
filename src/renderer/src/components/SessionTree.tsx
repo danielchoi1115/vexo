@@ -22,6 +22,11 @@ type PromptState =
 /** Module-level drag payload — Chromium sometimes drops custom mime types on drop */
 let activeDrag: { type: 'session' | 'folder'; id: string } | null = null
 
+/** Windows default double-click interval. */
+const DBLCLICK_MS = 500
+/** Only to collapse native dblclick + our mouseup into one action. */
+const DBLCLICK_DEDUPE_MS = 80
+
 /** "foo (1)" → base "foo", so duplicating yields "foo (2)" not "foo (1) (1)" */
 function nextDuplicateName(name: string, existingNames: string[]): string {
   const set = new Set(existingNames)
@@ -89,6 +94,10 @@ export function SessionTree(): React.JSX.Element {
   const [exportOpen, setExportOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const lastNewSessionReq = useRef(0)
+  const lastTreeClickRef = useRef<{ key: string; at: number } | null>(null)
+  const lastTreeActionRef = useRef(0)
+  const pendingDoubleRef = useRef<(() => void) | null>(null)
+  const setFolderCollapsed = useAppStore((s) => s.setFolderCollapsed)
 
   // Only open New Session when + increments the request id (uses selected folder)
   useEffect(() => {
@@ -141,9 +150,9 @@ export function SessionTree(): React.JSX.Element {
   }
 
   const toggleFolder = (folder: SessionFolder): void => {
-    void window.api.sessions
-      .setFolderCollapsed(folder.id, !folder.collapsed)
-      .then(loadSessions)
+    const collapsed = !folder.collapsed
+    setFolderCollapsed(folder.id, collapsed)
+    void window.api.sessions.setFolderCollapsed(folder.id, collapsed)
   }
 
   const duplicateSession = async (session: SessionConfig): Promise<void> => {
@@ -241,11 +250,53 @@ export function SessionTree(): React.JSX.Element {
     }
   ]
 
+  const runTreeDoubleAction = (fn: () => void): void => {
+    const now = Date.now()
+    if (now - lastTreeActionRef.current < DBLCLICK_DEDUPE_MS) return
+    lastTreeActionRef.current = now
+    fn()
+  }
+
+  /**
+   * Windows Chromium starts HTML5 drag on the 2nd mousedown and drops
+   * dblclick until the mouse moves. Arm the action here; run it on mouseup
+   * so the row does not re-layout under a still-down pointer.
+   */
+  const onTreeItemMouseDown = (
+    e: React.MouseEvent<HTMLElement>,
+    key: string,
+    onDouble: () => void
+  ): void => {
+    if (e.button !== 0) return
+    const now = Date.now()
+    const prev = lastTreeClickRef.current
+    if (prev && prev.key === key && now - prev.at <= DBLCLICK_MS) {
+      lastTreeClickRef.current = null
+      pendingDoubleRef.current = onDouble
+      e.currentTarget.draggable = false
+      e.preventDefault()
+      return
+    }
+    lastTreeClickRef.current = { key, at: now }
+    pendingDoubleRef.current = null
+  }
+
+  const flushPendingDouble = (e: React.SyntheticEvent<HTMLElement>): void => {
+    e.currentTarget.draggable = true
+    const fn = pendingDoubleRef.current
+    pendingDoubleRef.current = null
+    if (fn) runTreeDoubleAction(fn)
+  }
+
   const onDragStart = (
-    e: React.DragEvent,
+    e: React.DragEvent<HTMLElement>,
     type: 'session' | 'folder',
     id: string
   ): void => {
+    if (pendingDoubleRef.current) {
+      e.preventDefault()
+      return
+    }
     e.stopPropagation()
     activeDrag = { type, id }
     e.dataTransfer.setData('text/plain', `${type}:${id}`)
@@ -259,7 +310,9 @@ export function SessionTree(): React.JSX.Element {
     }
   }
 
-  const onDragEnd = (): void => {
+  const onDragEnd = (e: React.DragEvent<HTMLElement>): void => {
+    e.currentTarget.draggable = true
+    pendingDoubleRef.current = null
     activeDrag = null
     setDragOverKey(null)
   }
@@ -339,6 +392,10 @@ export function SessionTree(): React.JSX.Element {
       key={session.id}
       className={`tree-item session ${dragOverKey === `s:${session.id}` ? 'drag-over' : ''}`}
       draggable
+      onMouseDown={(e) =>
+        onTreeItemMouseDown(e, `session:${session.id}`, () => tryConnect(session))
+      }
+      onMouseUp={flushPendingDouble}
       onDragStart={(e) => onDragStart(e, 'session', session.id)}
       onDragEnd={onDragEnd}
       onDragOver={(e) => allowDrop(e, `s:${session.id}`, 'session')}
@@ -350,7 +407,7 @@ export function SessionTree(): React.JSX.Element {
         })
       }
       onClick={() => setSelectedFolderId(folderId)}
-      onDoubleClick={() => tryConnect(session)}
+      onDoubleClick={() => runTreeDoubleAction(() => tryConnect(session))}
       onContextMenu={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -409,6 +466,10 @@ export function SessionTree(): React.JSX.Element {
               <div
                 className={`tree-item folder ${selected ? 'selected' : ''} ${dragOverKey === folderDropKey ? 'drag-over' : ''}`}
                 draggable
+                onMouseDown={(e) =>
+                  onTreeItemMouseDown(e, `folder:${folder.id}`, () => toggleFolder(folder))
+                }
+                onMouseUp={flushPendingDouble}
                 onDragStart={(e) => onDragStart(e, 'folder', folder.id)}
                 onDragEnd={onDragEnd}
                 onDragOver={(e) => {
@@ -437,7 +498,7 @@ export function SessionTree(): React.JSX.Element {
                 }}
                 onDoubleClick={(e) => {
                   e.stopPropagation()
-                  toggleFolder(folder)
+                  runTreeDoubleAction(() => toggleFolder(folder))
                 }}
                 onContextMenu={(e) => {
                   e.preventDefault()
@@ -450,6 +511,7 @@ export function SessionTree(): React.JSX.Element {
                   type="button"
                   className="tree-chevron"
                   title={folder.collapsed ? 'Expand' : 'Collapse'}
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation()
                     toggleFolder(folder)
